@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The example app on Android: the package against a sample backend, section
+    by section. Give the backend when building, as the Flutter example's
+    dart-define values:
+
+        dotnet build -p:NecessaryBackendUrl=http://10.0.2.2:8787
+        dotnet publish -c Release -p:NecessaryBackends="Python=https://…%3BTypeScript=https://…"
+
+    A release build talks only HTTPS.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0-android</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <ApplicationId>com.meraj.necessarysdk.example</ApplicationId>
+    <ApplicationTitle>Necessary .NET</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1.1</ApplicationDisplayVersion>
+    <RootNamespace>Necessary.Example</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CA1707;CA2007;CA1031</NoWarn>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="NecessaryBackendUrl" Value="$(NecessaryBackendUrl)" />
+    <AssemblyMetadata Include="NecessaryBackends" Value="$(NecessaryBackends)" />
+    <Compile Include="../Shared/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/NecessarySdk/NecessarySdk.csproj" />
+  </ItemGroup>
+
+</Project>

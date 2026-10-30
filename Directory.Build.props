@@ -1,0 +1,24 @@
+<Project>
+
+  <!-- The whole of this folder builds on its own: it is the public package's
+       repository, exported as it is. Nothing above it is imported. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <Deterministic>true</Deterministic>
+    <Company>Meraj Hasan</Company>
+    <Authors>Meraj Hasan</Authors>
+    <Copyright>Copyright 2026 Meraj Hasan</Copyright>
+    <Product>necessary for .NET</Product>
+    <Version>0.1.1</Version>
+    <NoWarn>$(NoWarn);CA1848</NoWarn>
+    <!-- On a CI machine every path the compiler records is /_/..., so the
+         package carries none of the build machine's folders. -->
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Necessary .NET</string>
+	<key>CFBundleDisplayName</key>
+	<string>Necessary .NET</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.meraj.necessarysdk.example</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>MinimumOSVersion</key>
+	<string>15.0</string>
+	<key>UIDeviceFamily</key>
+	<array>
+		<integer>1</integer>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<!-- The location measurements: the app declares why, and asks from its own screen. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>To show the location measurement the example's backend asks for.</string>
+	<!-- Biometric step-up, when the app chooses the biometric factor. -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>To approve a sensitive request.</string>
+</dict>
+</plist>

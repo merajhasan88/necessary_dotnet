@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net8.0 is the platform-neutral client: the protocol, request proofs and
+         the scan, for an app that brings its own key and collector. The
+         android and ios targets add the phone's keystore, the collectors,
+         step-up and screen protection. net9.0-android, not net8.0: whether
+         the app's window is being recorded is an Android 15 API, bound from
+         .NET 9 on. iOS builds only on macOS: the ios
+         workload needs Xcode. NecessaryTargets narrows the list for a CI
+         machine that has only one of the workloads. -->
+    <TargetFrameworks>net8.0;net9.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('OSX'))">net8.0;net9.0-android;net9.0-ios</TargetFrameworks>
+    <TargetFrameworks Condition="'$(NecessaryTargets)' != ''">$(NecessaryTargets)</TargetFrameworks>
+    <AssemblyName>NecessarySdk</AssemblyName>
+    <RootNamespace>Necessary</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
+
+    <PackageId>NecessarySdk</PackageId>
+    <Title>necessary: device trust for .NET apps on Android and iOS</Title>
+    <Description>Device trust for .NET apps on Android and iOS: a key the app never exports, signed measurements of the phone and of the app running on it, and a proof on each request -- and, if you turn them on, a second key the person unlocks to approve a request, and a PIN your backend checks. It never scores and never decides: your backend does. The .NET translation of the Flutter plugin necessary.</Description>
+    <PackageTags>device-trust;security;android;ios;keystore;secure-enclave;request-signing;fraud</PackageTags>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/merajhasan88/necessary_dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/merajhasan88/necessary_dotnet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NecessarySdk.Tests" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\..\NOTICE" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <!-- The permissions and package queries the plugin's own features need,
+         merged into the app's manifest. -->
+    <AndroidManifest>Android/AndroidManifest.xml</AndroidManifest>
+  </PropertyGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'">
+    <Compile Remove="Android\**\*.cs" />
+    <None Include="Android\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'ios'">
+    <Compile Remove="iOS\**\*.cs" />
+    <None Include="iOS\**\*.cs" />
+  </ItemGroup>
+
+</Project>

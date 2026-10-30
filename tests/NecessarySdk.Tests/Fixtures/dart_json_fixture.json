@@ -1,0 +1,320 @@
+{
+ "targets": [
+  {
+   "target": "/v1/x?a=b",
+   "path": "/v1/x",
+   "query": "a=b"
+  },
+  {
+   "target": "/v1/a b?c d",
+   "path": "/v1/a%20b",
+   "query": "c%20d"
+  },
+  {
+   "target": "/v1/%7euser?q=%2b%41",
+   "path": "/v1/~user",
+   "query": "q=%2BA"
+  },
+  {
+   "target": "/v1/../x/./y?z#frag",
+   "path": "/x/y",
+   "query": "z"
+  },
+  {
+   "target": "/v1/[x]?{y}|^`",
+   "path": "/v1/%5Bx%5D",
+   "query": "%7By%7D%7C%5E%60"
+  },
+  {
+   "target": "/v1/café?q=€",
+   "path": "/v1/caf%C3%A9",
+   "query": "q=%E2%82%AC"
+  },
+  {
+   "target": "/v1/x?",
+   "path": "/v1/x",
+   "query": ""
+  },
+  {
+   "target": "/a/%zz?%",
+   "path": "/a/%25zz",
+   "query": "%25"
+  },
+  {
+   "target": "/v1/x%2Fy?a%2Fb",
+   "path": "/v1/x%2Fy",
+   "query": "a%2Fb"
+  },
+  {
+   "target": "/v1/x?a=1&b=2;c",
+   "path": "/v1/x",
+   "query": "a=1&b=2;c"
+  },
+  {
+   "target": "/v1/x??y",
+   "path": "/v1/x",
+   "query": "?y"
+  },
+  {
+   "target": "/v1/auth/approvals?limit=5&state=pending",
+   "path": "/v1/auth/approvals",
+   "query": "limit=5&state=pending"
+  },
+  {
+   "target": "/v1/business/graph?handle=a%20b%2Bc",
+   "path": "/v1/business/graph",
+   "query": "handle=a%20b%2Bc"
+  },
+  {
+   "target": "/x/y/..",
+   "path": "/x/",
+   "query": ""
+  },
+  {
+   "target": "/x/.",
+   "path": "/x/",
+   "query": ""
+  },
+  {
+   "target": "/v1/!$&'()*+,;=:@?/?:@!$&'()*+,;=",
+   "path": "/v1/!$&'()*+,;=:@",
+   "query": "/?:@!$&'()*+,;="
+  },
+  {
+   "target": "/v1/x\\y?a\\b",
+   "path": "/v1/x/y",
+   "query": "a%5Cb"
+  },
+  {
+   "target": "/v1/x?a=😀",
+   "path": "/v1/x",
+   "query": "a=%F0%9F%98%80"
+  },
+  {
+   "target": "/v1/\"q\"?\"r\"",
+   "path": "/v1/%22q%22",
+   "query": "%22r%22"
+  }
+ ],
+ "about": "Made by Dart 3.12.0 jsonEncode: the bytes the Flutter plugin sends. tests/NecessarySdk.Tests/DartJsonTests.cs holds the .NET encoder to them.",
+ "cases": [
+  {
+   "name": "android-8-complete.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"android\",\"collector_version\":8,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"package_name\":\"com.example.app\",\"version_name\":\"2.4.1\",\"version_code\":241,\"debuggable\":false,\"allow_backup\":false,\"cert_sha256\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"current_signers\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"signing_lineage\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"apk_sha256\":\"6f0c1d2e3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f\",\"split_apks\":[{\"name\":\"split_config.arm64_v8a.apk\",\"sha256\":\"c6c44c7bcd69f06b7a7a3e3c93f4f1869abb38ca56a1bede8ec309250a574036\"}],\"installer_package\":\"com.android.vending\",\"source_dir\":\"/data/app/com.example.app-1/base.apk\"},\"debug_state\":{\"status\":\"ok\",\"debugger_connected\":false,\"waiting_for_debugger\":false},\"root_files\":{\"status\":\"ok\",\"found_paths\":[],\"build_tags\":\"release-keys\",\"test_keys\":false},\"system_properties\":{\"status\":\"ok\",\"properties\":{\"ro.secure\":\"1\",\"ro.debuggable\":\"0\",\"ro.build.type\":\"user\",\"ro.build.tags\":\"release-keys\",\"ro.boot.verifiedbootstate\":\"green\",\"ro.boot.flash.locked\":\"1\",\"ro.boot.vbmeta.device_state\":\"locked\",\"ro.boot.veritymode\":\"enforcing\"}},\"runtime_maps\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_line_count\":0,\"maps_lines\":412},\"tracer\":{\"status\":\"ok\",\"tracer_pid\":0,\"seccomp\":2,\"no_new_privs\":0},\"root_shell\":{\"status\":\"ok\",\"su_path\":\"\",\"su_found\":false},\"selinux\":{\"status\":\"ok\",\"mode\":\"enforcing\",\"getenforce\":\"Enforcing\",\"enforce_value\":\"1\"},\"mounts\":{\"status\":\"ok\",\"protected_rw_mounts\":[]},\"frida_ports\":{\"status\":\"ok\",\"open_ports\":[]},\"instrumentation_threads\":{\"status\":\"ok\",\"frida_threads\":[],\"glib_threads\":[],\"token_threads\":[],\"thread_count\":42},\"exec_mappings\":{\"status\":\"ok\",\"wx_mappings\":0,\"wx_bytes\":0,\"deleted_exec_mappings\":0,\"deleted_exec_own_code\":0,\"deleted_exec_jit\":1,\"anon_exec_labeled\":1,\"anon_exec_unlabeled\":0,\"anon_exec_unlabeled_bytes\":0,\"maps_lines\":412,\"samples\":[]},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"diff_bytes\":0,\"core_diff_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"protect_restore_failures\":0,\"elapsed_ms\":180,\"core_compared_bytes\":614400,\"core_expected_bytes\":614400,\"core_skipped_bytes\":0,\"core_unreadable_bytes\":0,\"core_complete\":true,\"ext_compared_bytes\":2097152,\"ext_expected_bytes\":2097152,\"ext_skipped_bytes\":0,\"ext_unreadable_bytes\":0,\"ext_complete\":true,\"app_compared_bytes\":4194304,\"app_expected_bytes\":4194304,\"app_skipped_bytes\":0,\"app_unreadable_bytes\":0,\"app_complete\":true},\"developer_settings\":{\"status\":\"ok\",\"developer_options_enabled\":false,\"adb_enabled\":false},\"emulator\":{\"status\":\"ok\",\"suspected\":false,\"reasons\":[],\"model\":\"Pixel 8\",\"manufacturer\":\"Google\",\"product\":\"shiba\",\"hardware\":\"shiba\"},\"device\":{\"status\":\"ok\",\"release\":\"14\",\"sdk_int\":34,\"security_patch\":\"2026-10-01\",\"manufacturer\":\"Google\",\"brand\":\"google\",\"model\":\"Pixel 8\",\"device\":\"shiba\",\"build_id\":\"AP2A.240905.003\",\"fingerprint\":\"google/shiba/shiba:14/AP2A.240905.003/12231197:user/release-keys\",\"abi\":\"arm64-v8a\",\"page_size\":4096},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"transports\":[\"wifi\"],\"interfaces\":[\"wlan0\"]}},\"enabled_measurements\":[]}"
+  },
+  {
+   "name": "android-8-incomplete.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"android\",\"collector_version\":8,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"package_name\":\"com.example.app\",\"version_name\":\"2.4.1\",\"version_code\":241,\"debuggable\":false,\"allow_backup\":false,\"cert_sha256\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"current_signers\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"signing_lineage\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"apk_sha256\":\"6f0c1d2e3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f\",\"split_apks\":[{\"name\":\"split_config.arm64_v8a.apk\",\"sha256\":\"c6c44c7bcd69f06b7a7a3e3c93f4f1869abb38ca56a1bede8ec309250a574036\"}],\"installer_package\":\"com.android.vending\",\"source_dir\":\"/data/app/com.example.app-1/base.apk\"},\"debug_state\":{\"status\":\"ok\",\"debugger_connected\":false,\"waiting_for_debugger\":false},\"root_files\":{\"status\":\"ok\",\"found_paths\":[],\"build_tags\":\"release-keys\",\"test_keys\":false},\"system_properties\":{\"status\":\"ok\",\"properties\":{\"ro.secure\":\"1\",\"ro.debuggable\":\"0\",\"ro.build.type\":\"user\",\"ro.build.tags\":\"release-keys\",\"ro.boot.verifiedbootstate\":\"green\",\"ro.boot.flash.locked\":\"1\",\"ro.boot.vbmeta.device_state\":\"locked\",\"ro.boot.veritymode\":\"enforcing\"}},\"runtime_maps\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_line_count\":0,\"maps_lines\":412},\"tracer\":{\"status\":\"error\",\"error\":\"/proc/self/status is not readable\"},\"root_shell\":{\"status\":\"ok\",\"su_path\":\"\",\"su_found\":false},\"selinux\":{\"status\":\"ok\",\"mode\":\"enforcing\",\"getenforce\":\"Enforcing\",\"enforce_value\":\"1\"},\"mounts\":{\"status\":\"ok\",\"protected_rw_mounts\":[]},\"frida_ports\":{\"status\":\"ok\",\"open_ports\":[]},\"instrumentation_threads\":{\"status\":\"ok\",\"frida_threads\":[],\"glib_threads\":[],\"token_threads\":[],\"thread_count\":42},\"exec_mappings\":{\"status\":\"ok\",\"wx_mappings\":0,\"wx_bytes\":0,\"deleted_exec_mappings\":0,\"deleted_exec_own_code\":0,\"deleted_exec_jit\":1,\"anon_exec_labeled\":1,\"anon_exec_unlabeled\":0,\"anon_exec_unlabeled_bytes\":0,\"maps_lines\":412,\"samples\":[]},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"diff_bytes\":0,\"core_diff_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"protect_restore_failures\":0,\"elapsed_ms\":180,\"core_compared_bytes\":614400,\"core_expected_bytes\":614400,\"core_skipped_bytes\":0,\"core_unreadable_bytes\":0,\"core_complete\":true,\"ext_compared_bytes\":2097152,\"ext_expected_bytes\":2097152,\"ext_skipped_bytes\":0,\"ext_unreadable_bytes\":0,\"ext_complete\":true,\"app_compared_bytes\":4194304,\"app_expected_bytes\":4194304,\"app_skipped_bytes\":0,\"app_unreadable_bytes\":0,\"app_complete\":true},\"developer_settings\":{\"status\":\"ok\",\"developer_options_enabled\":false,\"unread\":{\"adb_enabled\":\"SecurityException: denied\"}},\"emulator\":{\"status\":\"ok\",\"suspected\":false,\"reasons\":[],\"model\":\"Pixel 8\",\"manufacturer\":\"Google\",\"product\":\"shiba\",\"hardware\":\"shiba\"},\"device\":{\"status\":\"ok\",\"release\":\"14\",\"sdk_int\":34,\"security_patch\":\"2026-10-01\",\"manufacturer\":\"Google\",\"brand\":\"google\",\"model\":\"Pixel 8\",\"device\":\"shiba\",\"build_id\":\"AP2A.240905.003\",\"fingerprint\":\"google/shiba/shiba:14/AP2A.240905.003/12231197:user/release-keys\",\"abi\":\"arm64-v8a\",\"page_size\":4096},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"transports\":[\"wifi\"],\"interfaces\":[\"wlan0\"]}},\"enabled_measurements\":[]}"
+  },
+  {
+   "name": "android-8-invalid.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"android\",\"collector_version\":8,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"package_name\":\"com.example.app\",\"version_name\":\"2.4.1\",\"version_code\":241,\"debuggable\":false,\"allow_backup\":false,\"cert_sha256\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"current_signers\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"signing_lineage\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"apk_sha256\":\"6f0c1d2e3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f\",\"split_apks\":[{\"name\":\"split_config.arm64_v8a.apk\",\"sha256\":\"c6c44c7bcd69f06b7a7a3e3c93f4f1869abb38ca56a1bede8ec309250a574036\"}],\"installer_package\":\"com.android.vending\",\"source_dir\":\"/data/app/com.example.app-1/base.apk\"},\"debug_state\":{\"status\":\"ok\",\"debugger_connected\":false,\"waiting_for_debugger\":false},\"root_files\":{\"status\":\"ok\",\"found_paths\":[],\"build_tags\":\"release-keys\",\"test_keys\":false},\"system_properties\":{\"status\":\"ok\",\"properties\":{\"ro.secure\":\"1\",\"ro.debuggable\":\"0\",\"ro.build.type\":\"user\",\"ro.build.tags\":\"release-keys\",\"ro.boot.verifiedbootstate\":\"green\",\"ro.boot.flash.locked\":\"1\",\"ro.boot.vbmeta.device_state\":\"locked\",\"ro.boot.veritymode\":\"enforcing\"}},\"runtime_maps\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_line_count\":0,\"maps_lines\":412},\"tracer\":{\"status\":\"ok\",\"tracer_pid\":0,\"seccomp\":2,\"no_new_privs\":0},\"root_shell\":{\"status\":\"ok\",\"su_path\":\"\",\"su_found\":false},\"selinux\":{\"status\":\"ok\",\"mode\":\"enforcing\",\"getenforce\":\"Enforcing\",\"enforce_value\":\"1\"},\"mounts\":{\"status\":\"ok\",\"protected_rw_mounts\":[]},\"frida_ports\":{\"status\":\"ok\",\"open_ports\":[]},\"instrumentation_threads\":{\"status\":\"ok\",\"frida_threads\":[],\"glib_threads\":[],\"token_threads\":[],\"thread_count\":42},\"exec_mappings\":{\"status\":\"ok\",\"wx_mappings\":0,\"wx_bytes\":0,\"deleted_exec_mappings\":0,\"deleted_exec_own_code\":0,\"deleted_exec_jit\":1,\"anon_exec_labeled\":1,\"anon_exec_unlabeled\":0,\"anon_exec_unlabeled_bytes\":0,\"maps_lines\":412,\"samples\":[]},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"diff_bytes\":0,\"core_diff_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"protect_restore_failures\":0,\"elapsed_ms\":180,\"core_compared_bytes\":614400,\"core_expected_bytes\":614400,\"core_skipped_bytes\":0,\"core_unreadable_bytes\":0,\"core_complete\":true,\"ext_compared_bytes\":2097152,\"ext_expected_bytes\":2097152,\"ext_skipped_bytes\":0,\"ext_unreadable_bytes\":0,\"ext_complete\":true,\"app_compared_bytes\":4194304,\"app_expected_bytes\":8388608,\"app_skipped_bytes\":0,\"app_unreadable_bytes\":0,\"app_complete\":true},\"developer_settings\":{\"status\":\"ok\",\"developer_options_enabled\":false,\"adb_enabled\":false},\"emulator\":{\"status\":\"ok\",\"suspected\":false,\"reasons\":[],\"model\":\"Pixel 8\",\"manufacturer\":\"Google\",\"product\":\"shiba\",\"hardware\":\"shiba\"},\"device\":{\"status\":\"ok\",\"release\":\"14\",\"sdk_int\":34,\"security_patch\":\"2026-10-01\",\"manufacturer\":\"Google\",\"brand\":\"google\",\"model\":\"Pixel 8\",\"device\":\"shiba\",\"build_id\":\"AP2A.240905.003\",\"fingerprint\":\"google/shiba/shiba:14/AP2A.240905.003/12231197:user/release-keys\",\"abi\":\"arm64-v8a\",\"page_size\":4096},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"transports\":[\"wifi\"],\"interfaces\":[\"wlan0\"]}},\"enabled_measurements\":[]}"
+  },
+  {
+   "name": "android-8-location-one-fix.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"android\",\"collector_version\":8,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"package_name\":\"com.example.app\",\"version_name\":\"2.4.1\",\"version_code\":241,\"debuggable\":false,\"allow_backup\":false,\"cert_sha256\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"current_signers\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"signing_lineage\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"apk_sha256\":\"6f0c1d2e3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f\",\"split_apks\":[{\"name\":\"split_config.arm64_v8a.apk\",\"sha256\":\"c6c44c7bcd69f06b7a7a3e3c93f4f1869abb38ca56a1bede8ec309250a574036\"}],\"installer_package\":\"com.android.vending\",\"source_dir\":\"/data/app/com.example.app-1/base.apk\"},\"debug_state\":{\"status\":\"ok\",\"debugger_connected\":false,\"waiting_for_debugger\":false},\"root_files\":{\"status\":\"ok\",\"found_paths\":[],\"build_tags\":\"release-keys\",\"test_keys\":false},\"system_properties\":{\"status\":\"ok\",\"properties\":{\"ro.secure\":\"1\",\"ro.debuggable\":\"0\",\"ro.build.type\":\"user\",\"ro.build.tags\":\"release-keys\",\"ro.boot.verifiedbootstate\":\"green\",\"ro.boot.flash.locked\":\"1\",\"ro.boot.vbmeta.device_state\":\"locked\",\"ro.boot.veritymode\":\"enforcing\"}},\"runtime_maps\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_line_count\":0,\"maps_lines\":412},\"tracer\":{\"status\":\"ok\",\"tracer_pid\":0,\"seccomp\":2,\"no_new_privs\":0},\"root_shell\":{\"status\":\"ok\",\"su_path\":\"\",\"su_found\":false},\"selinux\":{\"status\":\"ok\",\"mode\":\"enforcing\",\"getenforce\":\"Enforcing\",\"enforce_value\":\"1\"},\"mounts\":{\"status\":\"ok\",\"protected_rw_mounts\":[]},\"frida_ports\":{\"status\":\"ok\",\"open_ports\":[]},\"instrumentation_threads\":{\"status\":\"ok\",\"frida_threads\":[],\"glib_threads\":[],\"token_threads\":[],\"thread_count\":42},\"exec_mappings\":{\"status\":\"ok\",\"wx_mappings\":0,\"wx_bytes\":0,\"deleted_exec_mappings\":0,\"deleted_exec_own_code\":0,\"deleted_exec_jit\":1,\"anon_exec_labeled\":1,\"anon_exec_unlabeled\":0,\"anon_exec_unlabeled_bytes\":0,\"maps_lines\":412,\"samples\":[]},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"diff_bytes\":0,\"core_diff_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"protect_restore_failures\":0,\"elapsed_ms\":180,\"core_compared_bytes\":614400,\"core_expected_bytes\":614400,\"core_skipped_bytes\":0,\"core_unreadable_bytes\":0,\"core_complete\":true,\"ext_compared_bytes\":2097152,\"ext_expected_bytes\":2097152,\"ext_skipped_bytes\":0,\"ext_unreadable_bytes\":0,\"ext_complete\":true,\"app_compared_bytes\":4194304,\"app_expected_bytes\":4194304,\"app_skipped_bytes\":0,\"app_unreadable_bytes\":0,\"app_complete\":true},\"developer_settings\":{\"status\":\"ok\",\"developer_options_enabled\":false,\"adb_enabled\":false},\"emulator\":{\"status\":\"ok\",\"suspected\":false,\"reasons\":[],\"model\":\"Pixel 8\",\"manufacturer\":\"Google\",\"product\":\"shiba\",\"hardware\":\"shiba\"},\"device\":{\"status\":\"ok\",\"release\":\"14\",\"sdk_int\":34,\"security_patch\":\"2026-10-01\",\"manufacturer\":\"Google\",\"brand\":\"google\",\"model\":\"Pixel 8\",\"device\":\"shiba\",\"build_id\":\"AP2A.240905.003\",\"fingerprint\":\"google/shiba/shiba:14/AP2A.240905.003/12231197:user/release-keys\",\"abi\":\"arm64-v8a\",\"page_size\":4096},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"transports\":[\"wifi\"],\"interfaces\":[\"wlan0\"]},\"location\":{\"status\":\"ok\",\"permission\":\"precise\",\"latitude\":51.5072,\"longitude\":-0.1276,\"accuracy_m\":35.0,\"age_seconds\":10,\"provider\":\"fused\",\"fix_time\":1792857590},\"mock_location\":{\"status\":\"ok\",\"permission\":\"precise\",\"mock\":false,\"age_seconds\":10,\"fix_time\":1792857590}},\"enabled_measurements\":[\"location\",\"mock_location\"]}"
+  },
+  {
+   "name": "android-8-location-two-fixes.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"android\",\"collector_version\":8,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"package_name\":\"com.example.app\",\"version_name\":\"2.4.1\",\"version_code\":241,\"debuggable\":false,\"allow_backup\":false,\"cert_sha256\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"current_signers\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"signing_lineage\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"apk_sha256\":\"6f0c1d2e3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f\",\"split_apks\":[{\"name\":\"split_config.arm64_v8a.apk\",\"sha256\":\"c6c44c7bcd69f06b7a7a3e3c93f4f1869abb38ca56a1bede8ec309250a574036\"}],\"installer_package\":\"com.android.vending\",\"source_dir\":\"/data/app/com.example.app-1/base.apk\"},\"debug_state\":{\"status\":\"ok\",\"debugger_connected\":false,\"waiting_for_debugger\":false},\"root_files\":{\"status\":\"ok\",\"found_paths\":[],\"build_tags\":\"release-keys\",\"test_keys\":false},\"system_properties\":{\"status\":\"ok\",\"properties\":{\"ro.secure\":\"1\",\"ro.debuggable\":\"0\",\"ro.build.type\":\"user\",\"ro.build.tags\":\"release-keys\",\"ro.boot.verifiedbootstate\":\"green\",\"ro.boot.flash.locked\":\"1\",\"ro.boot.vbmeta.device_state\":\"locked\",\"ro.boot.veritymode\":\"enforcing\"}},\"runtime_maps\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_line_count\":0,\"maps_lines\":412},\"tracer\":{\"status\":\"ok\",\"tracer_pid\":0,\"seccomp\":2,\"no_new_privs\":0},\"root_shell\":{\"status\":\"ok\",\"su_path\":\"\",\"su_found\":false},\"selinux\":{\"status\":\"ok\",\"mode\":\"enforcing\",\"getenforce\":\"Enforcing\",\"enforce_value\":\"1\"},\"mounts\":{\"status\":\"ok\",\"protected_rw_mounts\":[]},\"frida_ports\":{\"status\":\"ok\",\"open_ports\":[]},\"instrumentation_threads\":{\"status\":\"ok\",\"frida_threads\":[],\"glib_threads\":[],\"token_threads\":[],\"thread_count\":42},\"exec_mappings\":{\"status\":\"ok\",\"wx_mappings\":0,\"wx_bytes\":0,\"deleted_exec_mappings\":0,\"deleted_exec_own_code\":0,\"deleted_exec_jit\":1,\"anon_exec_labeled\":1,\"anon_exec_unlabeled\":0,\"anon_exec_unlabeled_bytes\":0,\"maps_lines\":412,\"samples\":[]},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"diff_bytes\":0,\"core_diff_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"protect_restore_failures\":0,\"elapsed_ms\":180,\"core_compared_bytes\":614400,\"core_expected_bytes\":614400,\"core_skipped_bytes\":0,\"core_unreadable_bytes\":0,\"core_complete\":true,\"ext_compared_bytes\":2097152,\"ext_expected_bytes\":2097152,\"ext_skipped_bytes\":0,\"ext_unreadable_bytes\":0,\"ext_complete\":true,\"app_compared_bytes\":4194304,\"app_expected_bytes\":4194304,\"app_skipped_bytes\":0,\"app_unreadable_bytes\":0,\"app_complete\":true},\"developer_settings\":{\"status\":\"ok\",\"developer_options_enabled\":false,\"adb_enabled\":false},\"emulator\":{\"status\":\"ok\",\"suspected\":false,\"reasons\":[],\"model\":\"Pixel 8\",\"manufacturer\":\"Google\",\"product\":\"shiba\",\"hardware\":\"shiba\"},\"device\":{\"status\":\"ok\",\"release\":\"14\",\"sdk_int\":34,\"security_patch\":\"2026-10-01\",\"manufacturer\":\"Google\",\"brand\":\"google\",\"model\":\"Pixel 8\",\"device\":\"shiba\",\"build_id\":\"AP2A.240905.003\",\"fingerprint\":\"google/shiba/shiba:14/AP2A.240905.003/12231197:user/release-keys\",\"abi\":\"arm64-v8a\",\"page_size\":4096},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"transports\":[\"wifi\"],\"interfaces\":[\"wlan0\"]},\"location\":{\"status\":\"ok\",\"permission\":\"precise\",\"latitude\":51.5072,\"longitude\":-0.1276,\"accuracy_m\":35.0,\"age_seconds\":10,\"provider\":\"fused\",\"fix_time\":1792857590},\"mock_location\":{\"status\":\"ok\",\"permission\":\"precise\",\"mock\":false,\"age_seconds\":10,\"fix_time\":1792857595}},\"enabled_measurements\":[\"location\",\"mock_location\"]}"
+  },
+  {
+   "name": "android-8-refused.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"android\",\"collector_version\":8,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"package_name\":\"com.example.app\",\"version_name\":\"2.4.1\",\"version_code\":241,\"debuggable\":false,\"allow_backup\":false,\"cert_sha256\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"current_signers\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"signing_lineage\":[\"1b38e2a5a1b0a2a8c6a5b04a8a7c5b7fbfc1c6f0d6a7a7d1bd2c5fa2b1d0a3c4\"],\"apk_sha256\":\"6f0c1d2e3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f\",\"split_apks\":[{\"name\":\"split_config.arm64_v8a.apk\",\"sha256\":\"c6c44c7bcd69f06b7a7a3e3c93f4f1869abb38ca56a1bede8ec309250a574036\"}],\"installer_package\":\"com.android.vending\",\"source_dir\":\"/data/app/com.example.app-1/base.apk\"},\"debug_state\":{\"status\":\"ok\",\"debugger_connected\":false,\"waiting_for_debugger\":false},\"root_files\":{\"status\":\"ok\",\"found_paths\":[],\"build_tags\":\"release-keys\",\"test_keys\":false},\"system_properties\":{\"status\":\"ok\",\"properties\":{\"ro.secure\":\"1\",\"ro.debuggable\":\"0\",\"ro.build.type\":\"user\",\"ro.build.tags\":\"release-keys\",\"ro.boot.verifiedbootstate\":\"green\",\"ro.boot.flash.locked\":\"1\",\"ro.boot.vbmeta.device_state\":\"locked\",\"ro.boot.veritymode\":\"enforcing\"}},\"runtime_maps\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_line_count\":0,\"maps_lines\":412},\"tracer\":{\"status\":\"ok\",\"tracer_pid\":0,\"seccomp\":2,\"no_new_privs\":0},\"root_shell\":{\"status\":\"ok\",\"su_path\":\"\",\"su_found\":false},\"selinux\":{\"status\":\"ok\",\"mode\":\"enforcing\",\"getenforce\":\"Enforcing\",\"enforce_value\":\"1\"},\"mounts\":{\"status\":\"ok\",\"protected_rw_mounts\":[]},\"frida_ports\":{\"status\":\"ok\",\"open_ports\":[]},\"instrumentation_threads\":{\"status\":\"ok\",\"frida_threads\":[],\"glib_threads\":[],\"token_threads\":[],\"thread_count\":42},\"exec_mappings\":{\"status\":\"ok\",\"wx_mappings\":0,\"wx_bytes\":0,\"deleted_exec_mappings\":0,\"deleted_exec_own_code\":0,\"deleted_exec_jit\":1,\"anon_exec_labeled\":1,\"anon_exec_unlabeled\":0,\"anon_exec_unlabeled_bytes\":0,\"maps_lines\":412,\"samples\":[]},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"diff_bytes\":0,\"core_diff_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"protect_restore_failures\":0,\"elapsed_ms\":180,\"core_compared_bytes\":614400,\"core_expected_bytes\":614400,\"core_skipped_bytes\":0,\"core_unreadable_bytes\":0,\"core_complete\":true,\"ext_compared_bytes\":2097152,\"ext_expected_bytes\":2097152,\"ext_skipped_bytes\":0,\"ext_unreadable_bytes\":0,\"ext_complete\":true,\"app_compared_bytes\":4194304,\"app_expected_bytes\":4194304,\"app_skipped_bytes\":0,\"app_unreadable_bytes\":0,\"app_complete\":true},\"developer_settings\":{\"status\":\"ok\",\"developer_options_enabled\":false,\"adb_enabled\":false,\"unread\":[\"adb_enabled\"]},\"emulator\":{\"status\":\"ok\",\"suspected\":false,\"reasons\":[],\"model\":\"Pixel 8\",\"manufacturer\":\"Google\",\"product\":\"shiba\",\"hardware\":\"shiba\"},\"device\":{\"status\":\"ok\",\"release\":\"14\",\"sdk_int\":34,\"security_patch\":\"2026-10-01\",\"manufacturer\":\"Google\",\"brand\":\"google\",\"model\":\"Pixel 8\",\"device\":\"shiba\",\"build_id\":\"AP2A.240905.003\",\"fingerprint\":\"google/shiba/shiba:14/AP2A.240905.003/12231197:user/release-keys\",\"abi\":\"arm64-v8a\",\"page_size\":4096},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"transports\":[\"wifi\"],\"interfaces\":[\"wlan0\"]}},\"enabled_measurements\":[]}"
+  },
+  {
+   "name": "ios-5-complete.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"ios\",\"collector_version\":5,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"bundle_id\":\"com.example.app\",\"executable_sha256\":\"8e1f0a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7\",\"version_name\":\"2.4.1\",\"version_code\":\"241\",\"executable_bytes\":487032},\"code_signing\":{\"status\":\"ok\",\"signing_identifier\":\"com.example.app\",\"team_identifier\":\"ABCDE12345\",\"get_task_allow\":false,\"signed\":true,\"entitlement_count\":4},\"debugger\":{\"status\":\"ok\",\"traced\":false},\"jailbreak_files\":{\"status\":\"ok\",\"found_paths\":[],\"checked_count\":20},\"sandbox\":{\"status\":\"ok\",\"write_outside_sandbox_succeeded\":false},\"dyld_images\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_image_count\":0,\"image_count\":438},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"app_compared_bytes\":10645480,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"app_images_expected\":3,\"app_images_compared\":3,\"app_images_unreadable\":0,\"app_images_skipped\":0,\"app_expected_bytes\":10645480,\"app_unreadable_bytes\":0,\"app_skipped_bytes\":0,\"app_complete\":true,\"main_executable_compared\":true,\"system_images_unreadable\":435,\"core_compared_bytes\":0,\"core_diff_bytes\":0,\"diff_bytes\":0,\"ext_compared_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"system_bucket_reason\":\"dyld_shared_cache_has_no_backing_files\",\"app_segment_compared_bytes\":15040512,\"app_segment_diff_bytes\":0},\"device\":{\"status\":\"ok\",\"os_version\":\"17.6.1\",\"os_build\":\"21G93\",\"model_identifier\":\"iPhone15,2\",\"page_size\":16384},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"scoped_interfaces\":[\"en0\",\"pdp_ip0\"]}},\"enabled_measurements\":[]}"
+  },
+  {
+   "name": "ios-5-incomplete.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"ios\",\"collector_version\":5,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"bundle_id\":\"com.example.app\",\"executable_sha256\":\"8e1f0a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7\",\"version_name\":\"2.4.1\",\"version_code\":\"241\",\"executable_bytes\":487032},\"code_signing\":{\"status\":\"ok\",\"signing_identifier\":\"com.example.app\",\"team_identifier\":\"ABCDE12345\",\"get_task_allow\":false,\"signed\":true,\"entitlement_count\":4},\"debugger\":{\"status\":\"ok\",\"traced\":false},\"jailbreak_files\":{\"status\":\"ok\",\"checked_count\":20},\"sandbox\":{\"status\":\"ok\",\"write_outside_sandbox_succeeded\":false},\"dyld_images\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_image_count\":0,\"image_count\":438},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"app_compared_bytes\":10645480,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"app_images_expected\":3,\"app_images_compared\":3,\"app_images_unreadable\":0,\"app_images_skipped\":0,\"app_expected_bytes\":10645480,\"app_unreadable_bytes\":0,\"app_skipped_bytes\":0,\"app_complete\":true,\"main_executable_compared\":true,\"system_images_unreadable\":435,\"core_compared_bytes\":0,\"core_diff_bytes\":0,\"diff_bytes\":0,\"ext_compared_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"system_bucket_reason\":\"dyld_shared_cache_has_no_backing_files\",\"app_segment_compared_bytes\":15040512,\"app_segment_diff_bytes\":0},\"device\":{\"status\":\"ok\",\"os_version\":\"17.6.1\",\"os_build\":\"21G93\",\"model_identifier\":\"iPhone15,2\",\"page_size\":16384},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"scoped_interfaces\":[\"en0\",\"pdp_ip0\"]}},\"enabled_measurements\":[]}"
+  },
+  {
+   "name": "ios-5-invalid.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"ios\",\"collector_version\":5,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"bundle_id\":\"com.example.app\",\"executable_sha256\":\"8e1f0a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7\",\"version_name\":\"2.4.1\",\"version_code\":\"241\",\"executable_bytes\":487032},\"code_signing\":{\"status\":\"ok\",\"signing_identifier\":\"com.example.app\",\"team_identifier\":\"ABCDE12345\",\"get_task_allow\":false,\"signed\":true,\"entitlement_count\":4},\"debugger\":{\"status\":\"ok\",\"traced\":false},\"jailbreak_files\":{\"status\":\"ok\",\"found_paths\":[],\"checked_count\":20},\"sandbox\":{\"status\":\"ok\",\"write_outside_sandbox_succeeded\":false},\"dyld_images\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_image_count\":0,\"image_count\":438},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"app_compared_bytes\":10645480,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"app_images_expected\":4,\"app_images_compared\":3,\"app_images_unreadable\":0,\"app_images_skipped\":0,\"app_expected_bytes\":10645480,\"app_unreadable_bytes\":0,\"app_skipped_bytes\":0,\"app_complete\":true,\"main_executable_compared\":true,\"system_images_unreadable\":435,\"core_compared_bytes\":0,\"core_diff_bytes\":0,\"diff_bytes\":0,\"ext_compared_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"system_bucket_reason\":\"dyld_shared_cache_has_no_backing_files\",\"app_segment_compared_bytes\":15040512,\"app_segment_diff_bytes\":0},\"device\":{\"status\":\"ok\",\"os_version\":\"17.6.1\",\"os_build\":\"21G93\",\"model_identifier\":\"iPhone15,2\",\"page_size\":16384},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"scoped_interfaces\":[\"en0\",\"pdp_ip0\"]}},\"enabled_measurements\":[]}"
+  },
+  {
+   "name": "ios-5-partial.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"ios\",\"collector_version\":5,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"bundle_id\":\"com.example.app\",\"executable_sha256\":\"8e1f0a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7\",\"version_name\":\"2.4.1\",\"version_code\":\"241\",\"executable_bytes\":487032},\"code_signing\":{\"status\":\"ok\",\"signing_identifier\":\"com.example.app\",\"team_identifier\":\"ABCDE12345\",\"get_task_allow\":false,\"signed\":true,\"entitlement_count\":4},\"debugger\":{\"status\":\"ok\",\"traced\":false},\"jailbreak_files\":{\"status\":\"ok\",\"found_paths\":[],\"checked_count\":20},\"sandbox\":{\"status\":\"ok\",\"write_outside_sandbox_succeeded\":false},\"dyld_images\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_image_count\":0,\"image_count\":438},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"app_compared_bytes\":4743968,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"app_images_expected\":3,\"app_images_compared\":2,\"app_images_unreadable\":1,\"app_images_skipped\":0,\"app_expected_bytes\":10645480,\"app_unreadable_bytes\":5901512,\"app_skipped_bytes\":0,\"app_complete\":false,\"main_executable_compared\":true,\"system_images_unreadable\":435,\"core_compared_bytes\":0,\"core_diff_bytes\":0,\"diff_bytes\":0,\"ext_compared_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"system_bucket_reason\":\"dyld_shared_cache_has_no_backing_files\",\"app_segment_compared_bytes\":15040512,\"app_segment_diff_bytes\":0,\"app_images_not_compared\":{\"Frameworks/App.framework/App\":\"unreadable: 4096 of 5914624 bytes read\"}},\"device\":{\"status\":\"ok\",\"os_version\":\"17.6.1\",\"os_build\":\"21G93\",\"model_identifier\":\"iPhone15,2\",\"page_size\":16384},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"scoped_interfaces\":[\"en0\",\"pdp_ip0\"]}},\"enabled_measurements\":[]}"
+  },
+  {
+   "name": "ios-5-refused.json",
+   "dart": "{\"installation_id\":\"00000000-0000-4000-8000-000000000001\",\"challenge_id\":\"00000000-0000-4000-8000-000000000002\",\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"collected_at\":1792857600,\"version\":1,\"platform\":\"ios\",\"collector_version\":5,\"probe_results\":{\"app_identity\":{\"status\":\"ok\",\"bundle_id\":\"com.example.app\",\"executable_sha256\":\"8e1f0a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7\",\"version_name\":\"2.4.1\",\"version_code\":\"241\",\"executable_bytes\":487032},\"code_signing\":{\"status\":\"ok\",\"signing_identifier\":\"com.example.app\",\"team_identifier\":\"ABCDE12345\",\"get_task_allow\":false,\"signed\":true,\"entitlement_count\":4},\"debugger\":{\"status\":\"ok\",\"traced\":false},\"jailbreak_files\":{\"status\":\"ok\",\"found_paths\":[],\"checked_count\":20},\"sandbox\":{\"status\":\"ok\",\"write_outside_sandbox_succeeded\":false},\"dyld_images\":{\"status\":\"ok\",\"suspicious_tokens\":[],\"suspicious_image_count\":0,\"image_count\":438},\"code_integrity\":{\"status\":\"ok\",\"checked\":true,\"app_compared_bytes\":10645480,\"app_diff_bytes\":0,\"app_libs_diff\":0,\"diffed_libs\":\"\",\"app_images_expected\":3,\"app_images_compared\":3,\"app_images_unreadable\":0,\"app_images_skipped\":0,\"app_expected_bytes\":10645480,\"app_unreadable_bytes\":0,\"app_skipped_bytes\":0,\"app_complete\":true,\"main_executable_compared\":true,\"system_images_unreadable\":435,\"core_compared_bytes\":0,\"core_diff_bytes\":0,\"diff_bytes\":0,\"ext_compared_bytes\":0,\"ext_diff_bytes\":0,\"ext_libs_diff\":0,\"system_bucket_reason\":\"dyld_shared_cache_has_no_backing_files\",\"app_segment_compared_bytes\":15040512,\"app_segment_diff_bytes\":0,\"app_images_not_compared\":[\"App\"]},\"device\":{\"status\":\"ok\",\"os_version\":\"17.6.1\",\"os_build\":\"21G93\",\"model_identifier\":\"iPhone15,2\",\"page_size\":16384},\"network\":{\"status\":\"ok\",\"vpn_active\":false,\"http_proxy_configured\":false,\"scoped_interfaces\":[\"en0\",\"pdp_ip0\"]}},\"enabled_measurements\":[]}"
+  },
+  {
+   "name": "string",
+   "dart": "{\"s\":\"café / €\",\"l\":[\"café / €\"]}"
+  },
+  {
+   "name": "string",
+   "dart": "{\"s\":\"\\\"x\\\"\",\"l\":[\"\\\"x\\\"\"]}"
+  },
+  {
+   "name": "string",
+   "dart": "{\"s\":\"tab\\tnew\\nline\\rcr\\bback\\fform\",\"l\":[\"tab\\tnew\\nline\\rcr\\bback\\fform\"]}"
+  },
+  {
+   "name": "string",
+   "dart": "{\"s\":\"\\u0001\\u001f\",\"l\":[\"\\u0001\\u001f\"]}"
+  },
+  {
+   "name": "string",
+   "dart": "{\"s\":\"emoji 😀\",\"l\":[\"emoji 😀\"]}"
+  },
+  {
+   "name": "string",
+   "dart": "{\"s\":\"  \",\"l\":[\"  \"]}"
+  },
+  {
+   "name": "string",
+   "dart": "{\"s\":\"<>&'+=\",\"l\":[\"<>&'+=\"]}"
+  },
+  {
+   "name": "string",
+   "dart": "{\"s\":\"a/b\\\\c\",\"l\":[\"a/b\\\\c\"]}"
+  },
+  {
+   "name": "string",
+   "dart": "{\"s\":\" nbsp\",\"l\":[\" nbsp\"]}"
+  },
+  {
+   "name": "string",
+   "dart": "{\"s\":\"märz –\",\"l\":[\"märz –\"]}"
+  },
+  {
+   "name": "int",
+   "dart": "{\"i\":0}"
+  },
+  {
+   "name": "int",
+   "dart": "{\"i\":-1}"
+  },
+  {
+   "name": "int",
+   "dart": "{\"i\":9007199254740993}"
+  },
+  {
+   "name": "int",
+   "dart": "{\"i\":9223372036854775807}"
+  },
+  {
+   "name": "int",
+   "dart": "{\"i\":-9223372036854775808}"
+  }
+ ],
+ "doubles": [
+  {
+   "bits": "0000000000000000",
+   "dart": "0.0"
+  },
+  {
+   "bits": "-8000000000000000",
+   "dart": "-0.0"
+  },
+  {
+   "bits": "3ff0000000000000",
+   "dart": "1.0"
+  },
+  {
+   "bits": "-4010000000000000",
+   "dart": "-1.0"
+  },
+  {
+   "bits": "3fb999999999999a",
+   "dart": "0.1"
+  },
+  {
+   "bits": "3eb0c6f7a0b5ed8d",
+   "dart": "0.000001"
+  },
+  {
+   "bits": "3e7ad7f29abcaf48",
+   "dart": "1e-7"
+  },
+  {
+   "bits": "3e8421f5f40d8376",
+   "dart": "1.5e-7"
+  },
+  {
+   "bits": "405edd2f1a9fbe77",
+   "dart": "123.456"
+  },
+  {
+   "bits": "430c6bf526340000",
+   "dart": "1000000000000000.0"
+  },
+  {
+   "bits": "4415af1d78b58c40",
+   "dart": "100000000000000000000.0"
+  },
+  {
+   "bits": "444b1ae4d6e2ef50",
+   "dart": "1e+21"
+  },
+  {
+   "bits": "43e56a95319d63e1",
+   "dart": "12345678901234567000.0"
+  },
+  {
+   "bits": "7fefffffffffffff",
+   "dart": "1.7976931348623157e+308"
+  },
+  {
+   "bits": "0000000000000001",
+   "dart": "5e-324"
+  },
+  {
+   "bits": "403f8538ef34d6a1",
+   "dart": "31.5204"
+  },
+  {
+   "bits": "405296f4f0d844d0",
+   "dart": "74.3587"
+  },
+  {
+   "bits": "4028000000000000",
+   "dart": "12.0"
+  },
+  {
+   "bits": "3f201f31f46ed246",
+   "dart": "0.000123"
+  },
+  {
+   "bits": "4059000000000000",
+   "dart": "100.0"
+  },
+  {
+   "bits": "3efa36e2eb1c432d",
+   "dart": "0.000025"
+  },
+  {
+   "bits": "4011666666666666",
+   "dart": "4.35"
+  },
+  {
+   "bits": "3fd3333333333334",
+   "dart": "0.30000000000000004"
+  },
+  {
+   "bits": "419d6f3454800000",
+   "dart": "123456789.125"
+  },
+  {
+   "bits": "3ee4f8b588e368f1",
+   "dart": "0.00001"
+  },
+  {
+   "bits": "444b1ae4d6e2ef4f",
+   "dart": "999999999999999900000.0"
+  },
+  {
+   "bits": "44dfe185ca57c517",
+   "dart": "6.02214076e+23"
+  },
+  {
+   "bits": "-41a5280d654350b8",
+   "dart": "-2.5e-8"
+  }
+ ]
+}

@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Compile-checks the package's iOS sources on Linux, against Apple's real
+    bindings: the ios workload installs only on macOS, so on any other machine
+    nothing else compiles src/NecessarySdk/iOS/*.cs.
+
+        dotnet build tools/ioscheck
+
+    A reference assembly proves the API surface compiles; it does not run the
+    ios workload, link against an Xcode SDK or produce a bundle, and the
+    platform analysers are inert here (this is plain net9.0). The real build is
+    the Codemagic workflow's, on macOS. IosRefPackagesPath names a folder that
+    already holds the reference pack, to spare the 51 MB download.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DefineConstants>$(DefineConstants);IOS</DefineConstants>
+    <NoWarn>$(NoWarn);CA1416;CA1422;CS0618;CS8632;CS1591;CA1848;CA1707;CA2007;CA1031</NoWarn>
+    <IsPackable>false</IsPackable>
+    <IosRefPackage Condition="'$(IosRefPackage)' == ''">Microsoft.iOS.Ref.net9.0_26.0</IosRefPackage>
+    <IosRefVersion Condition="'$(IosRefVersion)' == ''">26.0.9785</IosRefVersion>
+    <IosRefPackagesPath Condition="'$(IosRefPackagesPath)' == ''">$(MSBuildThisFileDirectory)packages/</IosRefPackagesPath>
+    <RestorePackagesPath>$(IosRefPackagesPath)</RestorePackagesPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageDownload Include="$(IosRefPackage)" Version="[$(IosRefVersion)]" />
+    <Compile Include="../../src/NecessarySdk/**/*.cs" Exclude="../../src/NecessarySdk/Android/**;../../src/NecessarySdk/obj/**;../../src/NecessarySdk/bin/**" />
+    <!-- The example app's iOS screen and what it shares with Android. -->
+    <Compile Include="../../example/Shared/*.cs;../../example/iOS/*.cs" />
+    <Reference Include="Microsoft.iOS">
+      <HintPath>$(IosRefPackagesPath)$(IosRefPackage.ToLowerInvariant())/$(IosRefVersion)/ref/net9.0/Microsoft.iOS.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

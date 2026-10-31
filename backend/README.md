@@ -1,6 +1,6 @@
 # Sample backends
 
-Three small backends for the `necessary` packages (the Flutter plugin and this .NET package) — in Python, TypeScript and C# — written from the
+Three small backends for the `necessary` package — in Python, TypeScript and C# — written from the
 integration guide (`doc/integration_guide.md`) and the measurement contract alone. Each implements the
 guide's API (its section 4) and the checks its sections 1 to 3 describe, in the guide's order, with
 the section numbers in the code:
@@ -47,7 +47,7 @@ logic.
 
 ## This sample's own API
 
-Beside the guide's calls, a few of the sample's own, to show the plugin's proofs in use — each under the
+Beside the guide's calls, a few of the sample's own, to show the package's proofs in use — each under the
 session and request proof the guide describes:
 
 | Call | Session | Needs |

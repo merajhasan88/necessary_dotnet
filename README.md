@@ -6,13 +6,10 @@ signed measurements of the phone and of the app running on it, and a proof on ea
 sends — and, if you turn them on, a second key the person must unlock to approve a request, and a
 PIN your backend checks. **It never scores and never decides: your backend does.**
 
-It is the .NET translation of the Flutter plugin
-[`necessary`](https://pub.dev/packages/necessary) 0.1.5: the same calls, the same messages byte for
-byte, the same measurements and fields, the same behaviour when calls overlap, fail or are interrupted.
-A backend written for one serves both.
-
 Android 7.0 (API 24) and later, from `net9.0-android`; iOS 15 and later, from `net9.0-ios`. The
 `net8.0` assembly carries the protocol alone, for code that brings its own key and collector.
+
+The package's website is **[necessarysdk.com](https://necessarysdk.com)**.
 
 ## Documentation
 
@@ -284,10 +281,9 @@ shape instead, use the pieces directly — `trust.Client`, `Reports.CollectRepor
 
 ## .NET and the memory a runtime compiles into
 
-The measurements are the Flutter plugin's, field for field, and so is what they mean — with one
-difference that comes from the runtime, not from the package. A Flutter app runs compiled Dart: the
-memory both writable and executable that its release maps (`exec_mappings`: `wx_bytes`,
-`wx_size_classes`, `wx_largest_bytes`) changed little between scans in the plugin's tests. **The .NET runtime
+One group of measurements depends on the runtime more than on the package: the memory both writable
+and executable that a release maps (`exec_mappings`: `wx_bytes`, `wx_size_classes`,
+`wx_largest_bytes`). **The .NET runtime
 we tested on Android (Mono, as .NET 9 ships it) compiles each method the first time it runs it**, into
 memory both writable and executable, and keeps it while the process runs: a .NET app's figures grow as
 the app is used — after a sign-in, a step-up, every screen the person opens. On the phones we tested
@@ -302,10 +298,8 @@ less. On iOS .NET is compiled ahead of time and maps none. Read these figures to
 measurements, against profiles of your own releases, and start in observation mode until you know what
 your genuine users' phones show.
 
-The code in memory (`code_integrity`) is compared with its files as the plugin compares it, with one
-difference on Android, where the `app` region is wider (collector 11). The plugin's `app` region is
-the APKs the app was installed from and the libraries it names; this package's is **all of the app's
-own code in files**: its APKs by their exact paths, the .NET runtime and its host by name
+The code in memory (`code_integrity`) is compared with its files. On Android (collector 11) the
+`app` region is **all of the app's own code in files**: its APKs by their exact paths, the .NET runtime and its host by name
 (`libmonosgen-2.0.so`, `libmonodroid.so`, `libxamarin-app.so`, the `System.*` native libraries), and
 every other executable file of the app's own that is mapped — the assemblies a release build compiles
 ahead of time and extracts (`libaot-*.dll.so`, this package's and your app's among them), the runtime's
@@ -326,8 +320,7 @@ measurements raise the cost of fraud, and your backend weighs them with its own 
 
 ## Try the example app
 
-The example app (`example/`) puts every piece above in a working app, against a sample backend. It is
-the Flutter example's, screen for screen, so the steps below are the plugin's.
+The example app (`example/`) puts every piece above in a working app, against a sample backend.
 
 ### Install it
 

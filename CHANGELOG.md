@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8
+
+- The package's website, [necessarysdk.com](https://necessarysdk.com), is named in the README and is
+  the package's project URL, so nuget.org shows it as the project website; the source repository stays
+  GitHub. The README and the package's description describe this package on its own. No code changed.
+
 ## 0.1.7
 
 - Android: a library whose executable segment ends inside its file's last page -- 19 of a .NET

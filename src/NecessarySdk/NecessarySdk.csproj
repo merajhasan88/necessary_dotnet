@@ -20,11 +20,11 @@
 
     <PackageId>NecessarySdk</PackageId>
     <Title>necessary: device trust for .NET apps on Android and iOS</Title>
-    <Description>Device trust for .NET apps on Android and iOS: a key the app never exports, signed measurements of the phone and of the app running on it, and a proof on each request -- and, if you turn them on, a second key the person unlocks to approve a request, and a PIN your backend checks. It never scores and never decides: your backend does. The .NET translation of the Flutter plugin necessary.</Description>
+    <Description>Device trust for .NET apps on Android and iOS: a key the app never exports, signed measurements of the phone and of the app running on it, and a proof on each request -- and, if you turn them on, a second key the person unlocks to approve a request, and a PIN your backend checks. It never scores and never decides: your backend does.</Description>
     <PackageTags>device-trust;security;android;ios;keystore;secure-enclave;request-signing;fraud</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/merajhasan88/necessary_dotnet</PackageProjectUrl>
+    <PackageProjectUrl>https://necessarysdk.com</PackageProjectUrl>
     <RepositoryUrl>https://github.com/merajhasan88/necessary_dotnet</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>

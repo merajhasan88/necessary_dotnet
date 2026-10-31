@@ -603,9 +603,9 @@ namespace Necessary
         /// </summary>
         private JsonObject ProbeCodeIntegrity()
         {
-            // The app's own: the APKs it was installed from (its region, by exact
-            // path) and the directories its files live in (what is outside the
-            // region but the app's, collector 10).
+            // The app's own: the APKs it was installed from, by exact path, and the
+            // directories its files live in -- every executable file of the app's
+            // own under them is in its region too (collector 11).
             var info = context.ApplicationInfo!;
             var apks = new[] { info.SourceDir }
                 .Concat(info.SplitSourceDirs ?? Array.Empty<string>())
@@ -677,7 +677,7 @@ namespace Necessary
             result["protect_restore_failures"] = native["protect_restore_failures"]!.DeepClone();
 
             // The app's own executable files mapped outside the app region
-            // (collector 10): counted, and named, at most 32.
+            // (collector 10; none from collector 11): counted, and named, at most 32.
             result["app_outside_count"] = native["app_outside_count"]!.DeepClone();
             result["app_outside_files"] = native["app_outside_files"]!.DeepClone();
 

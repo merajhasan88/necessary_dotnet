@@ -75,11 +75,16 @@ namespace Necessary
     /// does not make a library the app itself unloads meanwhile safe to read.)
     /// And from the pass over the review's other items: the app region is the
     /// app's own -- the APKs it was installed from, by exact path, and the
-    /// libraries named here. Whatever executable file of the app's own is mapped
-    /// but not in the region -- an ahead-of-time compiled assembly
-    /// (<c>libaot-*.dll.so</c>) a build extracted, another library -- is counted
-    /// and named (<c>app_outside_count</c>, <c>app_outside_files</c>), so the
-    /// report says what the region leaves out.
+    /// libraries named here -- never another package's APK the app loads code
+    /// from. For .NET (collector 11, the owner's decision of 2026-10-31, closing
+    /// the review's item 5) it is all of the app's own code in files: every
+    /// executable file of the app's own that is mapped -- the ahead-of-time
+    /// compiled assemblies a release extracts (<c>libaot-*.dll.so</c>), the
+    /// runtime's other libraries, the Java and Kotlin Android compiled
+    /// (<c>base.odex</c>) -- is compared too, each under its own name. What is
+    /// still left out is counted and named (<c>app_outside_count</c>,
+    /// <c>app_outside_files</c>): nothing, unless a target is ever narrowed again.
+    /// Code the runtime compiles as the app runs has no file, and is in no region.
     /// </remarks>
     internal static class CodeIntegrityComparison
     {
@@ -293,7 +298,7 @@ namespace Necessary
                 var memoryBuffer = new byte[Chunk];
                 CompareBucket(memory, NamedTargets(Core), mappings, core, counters, buffer, memoryBuffer, selected, names);
                 CompareBucket(memory, NamedTargets(Extended), mappings, ext, counters, buffer, memoryBuffer, selected, names);
-                CompareBucket(memory, AppTargets(own), mappings, app, counters, buffer, memoryBuffer, selected, names);
+                CompareBucket(memory, AppTargets(own, mappings), mappings, app, counters, buffer, memoryBuffer, selected, names);
                 outside = OutsideFiles(mappings, selected, own);
                 if (core.Found + ext.Found + app.Found == 0)
                 {
@@ -347,15 +352,34 @@ namespace Necessary
         internal static List<Target> NamedTargets(IEnumerable<string> suffixes) =>
             suffixes.Select(suffix => new Target(suffix, false, suffix.Substring(1))).ToList();
 
-        /// <summary>The app region: the named libraries, then the app's own APKs by exact path.</summary>
-        internal static List<Target> AppTargets(AppOwn own)
+        /// <summary>
+        /// The app region: the named libraries, then the app's own APKs by exact
+        /// path, then every other executable file of the app's own the snapshot
+        /// maps -- under its install or data directories -- each by exact path,
+        /// in path order, so a difference is named by its file.
+        /// </summary>
+        internal static List<Target> AppTargets(AppOwn own, IReadOnlyList<Mapping> mappings)
         {
             var targets = NamedTargets(AppNamed);
+            var exact = new HashSet<string>(StringComparer.Ordinal);
             foreach (var apk in own.Apks)
             {
-                if (!string.IsNullOrEmpty(apk))
+                if (!string.IsNullOrEmpty(apk) && exact.Add(apk))
                 {
                     targets.Add(new Target(apk, true, BaseName(apk)));
+                }
+            }
+
+            var files = mappings
+                .Select(mapping => mapping.Path)
+                .Where(path => own.Dirs.Any(dir => dir.Length > 0 && path.StartsWith(dir, StringComparison.Ordinal)))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(path => path, StringComparer.Ordinal);
+            foreach (var path in files)
+            {
+                if (exact.Add(path))
+                {
+                    targets.Add(new Target(path, true, BaseName(path)));
                 }
             }
 

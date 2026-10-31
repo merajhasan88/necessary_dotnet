@@ -43,7 +43,7 @@ namespace Necessary
         //     error, or names the parts it could not read in "unread". One
         //     location read answers both location measurements, which carry its
         //     fix_time.
-        private const int CollectorVersion = 10;
+        private const int CollectorVersion = 11;
 
         // Apps listed per capability, at most.
         private const int MaxApps = 32;

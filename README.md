@@ -23,7 +23,7 @@ Android 7.0 (API 24) and later, from `net9.0-android`; iOS 15 and later, from `n
 - [The measurement contract](contract/report-1/android-8-ios-5/) — the report's schema, its rules and
   sample reports. The folder's name is two versions: `report-1` is the report's format, and
   `android-8-ios-5` the lowest versions of the measuring code, the collector, that the contract
-  accepts — 8 on Android and 5 on iOS (`collector_version`; this package's are 10 and 8). They are not
+  accepts — 8 on Android and 5 on iOS (`collector_version`; this package's are 11 and 8). They are not
   the Android or iOS versions the package runs on, which are above.
 - [The example app](example/) puts every piece below in a working app, on Android and on iOS, against
   the [sample backends](backend/) (in the repository, not the package). [Try the example
@@ -302,14 +302,17 @@ less. On iOS .NET is compiled ahead of time and maps none. Read these figures to
 measurements, against profiles of your own releases, and start in observation mode until you know what
 your genuine users' phones show.
 
-The code in memory (`code_integrity`) is compared with its files as the plugin compares it. On Android
-the `app` region is the app's own: the APKs it was installed from, by their exact paths, and the .NET
-runtime and its host by name (`libmonosgen-2.0.so`, `libmonodroid.so`, `libxamarin-app.so` and the
-`System.*` native libraries), so `app_expected_bytes` is theirs. `app_complete` is complete over that
-region, not over all of the app's code: the app's own executable files mapped outside it — an assembly
-compiled ahead of time and extracted (`libaot-*.dll.so`), another library — are counted in
-`app_outside_count` and named in `app_outside_files`. Code the runtime compiles while the app runs has no
-file to compare with, and is not compared.
+The code in memory (`code_integrity`) is compared with its files as the plugin compares it, with one
+difference on Android, where the `app` region is wider (collector 11). The plugin's `app` region is
+the APKs the app was installed from and the libraries it names; this package's is **all of the app's
+own code in files**: its APKs by their exact paths, the .NET runtime and its host by name
+(`libmonosgen-2.0.so`, `libmonodroid.so`, `libxamarin-app.so`, the `System.*` native libraries), and
+every other executable file of the app's own that is mapped — the assemblies a release build compiles
+ahead of time and extracts (`libaot-*.dll.so`, this package's and your app's among them), the runtime's
+other libraries, the Java and Kotlin Android compiled (`base.odex`) — each compared under its own name.
+Another package's code the app loads, such as the WebView's, is never in it. So `app_complete` covers
+the app's code whether it stays in the APK or is extracted, and `app_outside_count` is 0. Code the
+runtime compiles while the app runs has no file to compare with, and is not compared.
 
 ## What the package never does
 

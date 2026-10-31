@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.6
+
+- Android (collector 11): the `app` region of the code comparison is all of the app's own code in
+  files. Besides the app's APKs and the .NET runtime's libraries by name, every executable file of the
+  app's own that is mapped is compared, each under its own name: the assemblies a release build compiles
+  ahead of time and extracts (`libaot-*.dll.so`), the runtime's other libraries, the Java and Kotlin
+  Android compiled (`base.odex`). A hook in an extracted assembly is now found, where 0.1.5 named such
+  files in `app_outside_count` without comparing them; `app_outside_count` is now 0. This closes the
+  release review's item 5 for .NET; the Flutter plugin's region (collector 10) is narrower, and the
+  collector version tells them apart.
+
 ## 0.1.5
 
 The .NET translation of the Flutter plugin `necessary` 0.1.5 (necessary_flutter `07e94e7`), which

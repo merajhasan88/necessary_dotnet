@@ -237,8 +237,11 @@ namespace Necessary.Tests
         }
 
         [Fact]
-        public void The_app_region_is_the_apps_own_apks_and_named_libraries_and_its_files_outside_are_named()
+        public void The_app_region_is_all_the_apps_own_code_in_files_and_never_another_packages()
         {
+            // The owner's decision of 2026-10-31 for .NET (collector 11): the
+            // app's own APKs, the named libraries, and every other executable
+            // file of the app's own -- nothing of its own left outside.
             var own = new AppOwn(
                 new[] { "/data/app/~~a==/com.x-b==/base.apk", "/data/app/~~a==/com.x-b==/split_config.arm64_v8a.apk" },
                 new[] { "/data/app/~~a==/com.x-b==/", "/data/user/0/com.x/" });
@@ -251,7 +254,7 @@ namespace Necessary.Tests
                 + "6000-7000 r-xp 00000000 fd:00 6 /data/user/0/com.x/files/libaot-Example.dll.so\n"
                 + "7000-8000 r-xp 00000000 fd:00 7 /data/app/~~a==/com.x-b==/lib/arm64/libmonosgen-2.0.so\n");
             var chosen = new bool[crafted.Count];
-            foreach (var target in CodeIntegrityComparison.AppTargets(own))
+            foreach (var target in CodeIntegrityComparison.AppTargets(own, crafted))
             {
                 for (var i = 0; i < crafted.Count; i++)
                 {
@@ -259,14 +262,10 @@ namespace Necessary.Tests
                 }
             }
 
-            Assert.Equal(new[] { true, true, false, false, false, false, true }, chosen);
-            var outside = CodeIntegrityComparison.OutsideFiles(crafted, chosen, own);
-            Assert.Equal(3, outside.Count);
-            Assert.Contains("/data/app/~~a==/com.x-b==/oat/arm64/base.odex", outside);
-            Assert.Contains("/data/user/0/com.x/files/libaot-Example.dll.so", outside);
+            // Another package's APK -- the WebView's -- is never the app's.
+            Assert.Equal(new[] { true, true, false, true, true, true, true }, chosen);
+            Assert.Empty(CodeIntegrityComparison.OutsideFiles(crafted, chosen, own));
 
-            // Through the comparison: the extracted AOT image the review found
-            // unmeasured is outside the region, counted and named.
             var memory = new FakeMemory();
             foreach (var mapping in crafted)
             {
@@ -274,11 +273,33 @@ namespace Necessary.Tests
             }
 
             var result = CodeIntegrityComparison.Compare(memory, own);
-            Assert.Equal(3, (int)result["app_outside_count"]!);
-            Assert.Equal(
-                new[] { "base.odex", "libaot-Example.dll.so", "libplugin.so" },
-                result["app_outside_files"]!.AsArray().Select(name => (string)name!).ToArray());
-            Assert.Equal(3 * 0x1000L, Long(result, "app_compared_bytes"));
+            Assert.Equal(0, (int)result["app_outside_count"]!);
+            Assert.Empty(result["app_outside_files"]!.AsArray());
+            Assert.Equal(6 * 0x1000L, Long(result, "app_compared_bytes"));
+            Assert.True((bool)result["app_complete"]!);
+        }
+
+        [Fact]
+        public void A_changed_byte_in_an_ahead_of_time_compiled_assembly_is_found_kept_in_the_apk_or_extracted()
+        {
+            // The release review's acceptance for its item 5: a controlled change
+            // in an application AOT image, under both layouts, is measured and
+            // detected.
+            var own = new AppOwn(
+                new[] { "/data/app/~~a==/com.x-b==/base.apk" },
+                new[] { "/data/app/~~a==/com.x-b==/", "/data/user/0/com.x/" });
+            var memory = new FakeMemory();
+            memory.Map(0x10000, 4 * Page, "r-xp", "/data/app/~~a==/com.x-b==/base.apk", fileOffset: 8 * Page);
+            memory.Map(0x20000, 2 * Page, "r-xp", "/data/app/~~a==/com.x-b==/lib/arm64/libaot-Example.dll.so");
+            memory.Patch(0x10010, 1);
+            memory.Patch(0x20020, 2);
+            var result = CodeIntegrityComparison.Compare(memory, own);
+            Assert.Equal(3, Long(result, "app_diff_bytes"));
+            Assert.Equal(2, (int)result["app_libs_diff"]!);
+            Assert.Equal("base.apk,libaot-Example.dll.so", (string?)result["diffed_libs"]);
+            Assert.True((bool)result["app_complete"]!);
+            Assert.Equal(0, (int)result["app_outside_count"]!);
+            AddsUp(result);
         }
 
         [Fact]
@@ -346,6 +367,35 @@ namespace Necessary.Tests
                 Assert.Equal(1, Long(hooked, "app_diff_bytes"));
                 Assert.Equal("fixture.apk", (string?)hooked["diffed_libs"]);
                 Assert.Equal("--xp", PermsAt(start));
+
+                // An extracted image of the app's own, outside its APKs: compared
+                // too, and a change in it found under its own name (collector 11).
+                var aot = Path.Combine(dir, "libaot-Fixture.dll.so");
+                File.WriteAllBytes(aot, content);
+                nint extracted;
+                using (var handle = File.OpenHandle(aot, FileMode.Open, FileAccess.Read))
+                {
+                    extracted = Posix.mmap(0, (nuint)content.Length, CodeIntegrityComparison.ProtExec, Posix.MapPrivate, (int)handle.DangerousGetHandle(), 0);
+                }
+
+                Assert.NotEqual(Posix.MapFailed, extracted);
+                try
+                {
+                    var both = CodeIntegrityComparison.Compare(new ProcessMemory(), fixture);
+                    Assert.Equal(without + (2 * content.Length), Long(both, "app_compared_bytes"));
+                    Assert.Equal(0, (int)both["app_outside_count"]!);
+                    Assert.Equal(0, Posix.mprotect(extracted, (nuint)page, CodeIntegrityComparison.ProtRead | CodeIntegrityComparison.ProtWrite));
+                    Marshal.WriteByte(extracted, 7, (byte)(Marshal.ReadByte(extracted, 7) ^ 0xff));
+                    Assert.Equal(0, Posix.mprotect(extracted, (nuint)page, CodeIntegrityComparison.ProtExec));
+                    var changed = CodeIntegrityComparison.Compare(new ProcessMemory(), fixture);
+                    Assert.Equal(2, Long(changed, "app_diff_bytes"));
+                    Assert.Equal("fixture.apk,libaot-Fixture.dll.so", (string?)changed["diffed_libs"]);
+                    Assert.Equal("--xp", PermsAt(unchecked((ulong)extracted)));
+                }
+                finally
+                {
+                    Posix.munmap(extracted, (nuint)content.Length);
+                }
 
                 // Two threads hammering the real comparison: never inside it at once.
                 CodeIntegrityComparison.MaxInFlight = 0;

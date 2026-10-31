@@ -16,8 +16,8 @@
     <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
     <ApplicationId>com.meraj.necessarysdk.example</ApplicationId>
     <ApplicationTitle>Necessary .NET</ApplicationTitle>
-    <ApplicationVersion>5</ApplicationVersion>
-    <ApplicationDisplayVersion>0.1.5</ApplicationDisplayVersion>
+    <ApplicationVersion>6</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1.6</ApplicationDisplayVersion>
     <RootNamespace>Necessary.Example</RootNamespace>
     <IsPackable>false</IsPackable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

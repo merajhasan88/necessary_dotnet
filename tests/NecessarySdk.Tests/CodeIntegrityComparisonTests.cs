@@ -120,16 +120,50 @@ namespace Necessary.Tests
         }
 
         [Fact]
-        public void A_file_that_cannot_be_opened_or_ends_short_leaves_the_rest_unreadable()
+        public void A_file_that_cannot_be_opened_leaves_its_mapping_unreadable()
         {
             var memory = new FakeMemory();
             memory.Map(0x10000, 2 * Page, "r-xp", "/system/lib64/libc.so");
             memory.Map(0x20000, 2 * Page, "r-xp", "/system/lib64/libart.so");
             memory.Unopenable.Add("/system/lib64/libc.so");
-            memory.ShortFiles["/system/lib64/libart.so"] = (int)Page + 100;
             var result = CodeIntegrityComparison.Compare(memory, AppOwn.None);
-            Assert.Equal(Page + 100, (ulong)Long(result, "core_compared_bytes"));
-            Assert.Equal((4 * Page) - (Page + 100), (ulong)Long(result, "core_unreadable_bytes"));
+            Assert.Equal(2 * (long)Page, Long(result, "core_compared_bytes"));
+            Assert.Equal(2 * (long)Page, Long(result, "core_unreadable_bytes"));
+            Assert.False((bool)result["core_complete"]!);
+            AddsUp(result);
+        }
+
+        [Fact]
+        public void A_file_that_ends_inside_its_mappings_last_page_is_compared_with_the_zeros_there()
+        {
+            // An executable segment at the end of a small library -- as 19 of a
+            // .NET release's extracted libraries are on the OPPO: the kernel
+            // fills the rest of the file's last page with zeros. They are
+            // compared, never unreadable; code put in that slack is found.
+            var memory = new FakeMemory();
+            memory.Map(0x20000, 2 * Page, "r-xp", "/system/lib64/libart.so");
+            memory.ShortFiles["/system/lib64/libart.so"] = (int)Page + 100;
+            var clean = CodeIntegrityComparison.Compare(memory, AppOwn.None);
+            Assert.Equal(2 * (long)Page, Long(clean, "core_compared_bytes"));
+            Assert.Equal(0, Long(clean, "core_unreadable_bytes"));
+            Assert.Equal(0, Long(clean, "core_diff_bytes"));
+            Assert.True((bool)clean["core_complete"]!);
+            memory.Patch(0x20000 + Page + 200, 3);
+            Assert.Equal(3, Long(CodeIntegrityComparison.Compare(memory, AppOwn.None), "core_diff_bytes"));
+            AddsUp(clean);
+        }
+
+        [Fact]
+        public void More_than_a_page_past_a_files_end_is_never_touched_and_stays_unreadable()
+        {
+            // A file truncated after it was mapped: whole pages past its end fault
+            // when touched, so they are counted unreadable, never read.
+            var memory = new FakeMemory();
+            memory.Map(0x20000, 4 * Page, "r-xp", "/system/lib64/libart.so");
+            memory.ShortFiles["/system/lib64/libart.so"] = (int)Page;
+            var result = CodeIntegrityComparison.Compare(memory, AppOwn.None);
+            Assert.Equal((long)Page, Long(result, "core_compared_bytes"));
+            Assert.Equal(3 * (long)Page, Long(result, "core_unreadable_bytes"));
             Assert.False((bool)result["core_complete"]!);
             AddsUp(result);
         }
@@ -494,9 +528,11 @@ namespace Necessary.Tests
                 }
 
                 var position = mapping.FileOffset + (address - mapping.Start);
+                var fileEnd = ShortFiles.TryGetValue(mapping.Path, out var length) ? (ulong)length : ulong.MaxValue;
                 for (var i = 0; i < count; i++)
                 {
-                    buffer[i] = ByteAt(mapping.Path, position + (ulong)i);
+                    // Past a file's end the kernel's zeros, as in the last page of a mapping.
+                    buffer[i] = position + (ulong)i < fileEnd ? ByteAt(mapping.Path, position + (ulong)i) : (byte)0;
                 }
 
                 if (patches.Count > 0)

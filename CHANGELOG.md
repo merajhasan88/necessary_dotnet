@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.7
+
+- Android: a library whose executable segment ends inside its file's last page -- 19 of a .NET
+  release's extracted libraries, many of them ahead-of-time compiled assemblies -- is compared to its
+  end: the zeros the kernel fills that page with are compared with zeros, so code put in that slack is
+  found. 0.1.6 counted those bytes unreadable, and `app_complete` read false on a genuine phone (the
+  OPPO, Android 9: 4,856 bytes). More than a page past a file's end is never touched and stays
+  unreadable.
+
 ## 0.1.6
 
 - Android (collector 11): the `app` region of the code comparison is all of the app's own code in

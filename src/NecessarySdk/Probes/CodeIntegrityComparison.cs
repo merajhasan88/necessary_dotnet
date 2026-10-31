@@ -98,6 +98,9 @@ namespace Necessary
         /// <summary>Compared in 256 KiB chunks.</summary>
         public const int Chunk = 256 << 10;
 
+        /// <summary>The page size: the most of a mapping past its file's end that is compared, with zeros.</summary>
+        public static readonly int PageSize = Environment.SystemPageSize;
+
         /// <summary>The app's own executable files outside the region named, at most.</summary>
         public const int OutsideNames = 32;
 
@@ -589,8 +592,37 @@ namespace Necessary
             {
                 var want = (int)Math.Min(limit - done, Chunk);
                 var got = file.ReadAt(offset + done, buffer, want);
-                if (got <= 0)
+                if (got < 0)
                 {
+                    // A read that failed: the rest is unreadable.
+                    break;
+                }
+
+                if (got == 0)
+                {
+                    // The file ends inside the mapping. The kernel fills the rest
+                    // of the file's last page with zeros: an executable segment at
+                    // the end of a small library -- many an ahead-of-time compiled
+                    // assembly -- is mapped that way. Up to a page of them is
+                    // compared with zeros, so code put in that slack is found; more
+                    // than a page is no part of the file, faults when touched, and
+                    // stays unreadable.
+                    var rest = limit - done;
+                    if (rest >= PageSize)
+                    {
+                        break;
+                    }
+
+                    memory.Read(start + (ulong)done, memoryBuffer, (int)rest);
+                    for (var i = 0; i < rest; i++)
+                    {
+                        if (memoryBuffer[i] != 0)
+                        {
+                            coverage.Diff++;
+                        }
+                    }
+
+                    done += rest;
                     break;
                 }
 
@@ -603,12 +635,9 @@ namespace Necessary
                     }
                 }
 
+                // A short read is no failure: the next read says whether the file
+                // ended or goes on.
                 done += got;
-                if (got < want)
-                {
-                    // A short read: the rest is unreadable.
-                    break;
-                }
             }
 
             return done;

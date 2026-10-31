@@ -1,13 +1,13 @@
 # necessary for .NET
 
-Device trust for .NET apps on Android and iOS. The package gives your app a key it never exports — made
+Device integrity for .NET apps on Android and iOS. The package gives your app a key it never exports — made
 in the phone's keystore, in secure hardware where the phone has it and in software where it does not —
 signed measurements of the phone and of the app running on it, and a proof on each request your app
 sends — and, if you turn them on, a second key the person must unlock to approve a request, and a
 PIN your backend checks. **It never scores and never decides: your backend does.**
 
 It is the .NET translation of the Flutter plugin
-[`necessary`](https://pub.dev/packages/necessary) 0.1.1: the same calls, the same messages byte for
+[`necessary`](https://pub.dev/packages/necessary) 0.1.5: the same calls, the same messages byte for
 byte, the same measurements and fields, the same behaviour when calls overlap, fail or are interrupted.
 A backend written for one serves both.
 
@@ -23,7 +23,7 @@ Android 7.0 (API 24) and later, from `net9.0-android`; iOS 15 and later, from `n
 - [The measurement contract](contract/report-1/android-8-ios-5/) — the report's schema, its rules and
   sample reports. The folder's name is two versions: `report-1` is the report's format, and
   `android-8-ios-5` the lowest versions of the measuring code, the collector, that the contract
-  accepts — 8 on Android and 5 on iOS (`collector_version`; this package's are 8 and 6). They are not
+  accepts — 8 on Android and 5 on iOS (`collector_version`; this package's are 10 and 8). They are not
   the Android or iOS versions the package runs on, which are above.
 - [The example app](example/) puts every piece below in a working app, on Android and on iOS, against
   the [sample backends](backend/) (in the repository, not the package). [Try the example
@@ -193,8 +193,11 @@ says so to your backend. iOS makes per-use keys only. An app whose backend sets 
 `trust.StepUp` before `StartAsync()`.
 
 Removing the screen lock, or enrolling another biometric for a biometric key, makes the key unusable:
-an approval then fails with `NativeKeyException` `STEPUP_KEY_INVALIDATED`. The person re-enrols a new
-key with their own re-authentication:
+an approval then fails with `NativeKeyException` `STEPUP_KEY_INVALIDATED`. On Android the package
+deletes the key only when Android itself says so; when the keystore cannot establish whether the key is
+usable, or cannot be reached at all — a failure it may recover from — the approval fails with
+`STEPUP_KEY_UNAVAILABLE` and the key is kept: try again later. The person re-enrols a new key with their
+own re-authentication, which also replaces a key that stays unavailable:
 
 ```csharp
 await trust.ReenrolStepUpAsync(
@@ -250,12 +253,15 @@ Step-up and the app PIN combine: your backend decides which requests need which.
 | When | What the package does |
 |---|---|
 | The key is lost — an Android reinstall, a cleared keystore | `StartAsync()` makes a new key and a new installation ID; `trust.Identity!.CreatedThisLaunch` is true, so forget what you kept for the old installation. Your backend links the two only provisionally, by the reinstall hint |
+| Android's keystore cannot be reached | its lookups answer "no such key" then too, so the package makes a key only where the keystore, answering, holds none: `StartAsync()` fails with `NativeKeyException` `KEY_UNAVAILABLE`, sends nothing and keeps the installation as it is — call it again later; if it persists, `ResetAsync()` starts a new installation. Signing answers the same, and a step-up key `STEPUP_KEY_UNAVAILABLE` |
 | iOS keeps the key across a reinstall | with its ID, the same installation comes back; without it, the package proposes a new ID, your backend answers with the one it holds for the key, and the package keeps that one |
 | The app's process restarts | nothing is kept in memory: `StartAsync()` again finds the same key and installation, and proves it for a new installation session |
 | The activity, a scene or a window is replaced | screen protection follows: Android sets it on each new window; on iOS the cover is placed again, on the window the person sees in each scene, whenever a window becomes key, visible or hidden or a scene comes to the foreground — and protection asked for before any window exists covers the first one. A step-up prompt the recreation cancelled answers `STEPUP_CANCELLED`: ask again |
 | Two calls at once | `StartAsync()`, `ProveAsync()`, `LoadIdentityAsync()` and the same `ScanAsync()` run once, and the second caller gets the first's result; scans for different operations, or asked after the personal measurements changed, run apart. A `DeviceTrust` does its own work one step at a time, in order, on a scheduler of its own |
 | A step-up prompt is open | on iOS the package's other calls — a scan, a request's signature — wait until the person answers it; Android runs them meanwhile |
-| `ResetAsync()` or `Close()` while calls run | the calls end with `InterruptedCallException` and keep nothing — no session, no installation ID, no report sent; after a reset, new calls wait for the deletion and never join one made before |
+| `ResetAsync()` or `Close()` while calls run | the calls end with `InterruptedCallException` and keep nothing — no session, no installation ID, no report sent, no request proof or app PIN answer handed out; a reset first waits for every write and key change still running, so none outlives it; after a reset, new calls wait for the deletion and never join one made before. A proof handed out before the reset, or a request already sent, is beyond it: reset is local |
+| A key cannot be deleted | `ResetAsync()` fails with that `NativeKeyException` (`KEY_DELETE_FAILED`): call it again. If it is the installation key, the installation stays as it was, its ID with it; if it is the step-up key, the installation itself is already gone. None to delete, or no step-up on the phone, is no failure |
+| A native call fails on Android | the `NativeKeyException`'s message says what failed, then everything beneath it — `[cause: …]`, each failure's kind and words down to the keystore's own answer, and from Android 13 the keystore's numeric code wherever Android passes it on — so a key that reads as unavailable or dead says what the keystore answered. A probe's `error` and each `unread` reason carry the same, within the contract's lengths |
 | A call abandoned, or its answer lost | a scan is simply asked for again — a challenge serves once; the package never sends a signed request twice: sign it again, and let your backend decide whether the first one reached it |
 | A report over 65,536 bytes | it is never sent: the app lists the contract lets a collector shorten are shortened, and say `truncated`; anything else answers an `ApiException` `report_too_large` |
 
@@ -281,21 +287,29 @@ shape instead, use the pieces directly — `trust.Client`, `Reports.CollectRepor
 The measurements are the Flutter plugin's, field for field, and so is what they mean — with one
 difference that comes from the runtime, not from the package. A Flutter app runs compiled Dart: the
 memory both writable and executable that its release maps (`exec_mappings`: `wx_bytes`,
-`wx_size_classes`, `wx_largest_bytes`) is the same at every scan. **The .NET runtime on Android compiles
-each method the first time it runs it**, into memory both writable and executable, in 64 KiB units, and
-keeps it while the process runs: a .NET app's figures grow as the app is used — after a sign-in, a
-step-up, every screen the person opens.
+`wx_size_classes`, `wx_largest_bytes`) changed little between scans in the plugin's tests. **The .NET runtime
+we tested on Android (Mono, as .NET 9 ships it) compiles each method the first time it runs it**, into
+memory both writable and executable, and keeps it while the process runs: a .NET app's figures grow as
+the app is used — after a sign-in, a step-up, every screen the person opens. On the phones we tested
+it grew in 64 KiB blocks; that is an observation of the configurations tested, not a guarantee of .NET, and
+no way to tell an attacker apart — one need not allocate differently.
 
 So record your release's envelope as the integration guide's section 7.2 says, from your own runs of the
 installed release build, but **over whole sessions, through your app's main features, not at a cold
-start**: the most of each your release maps, per OS version, processor and page size. A build compiled
-ahead of time (`-p:RunAOTCompilation=true`) maps less. On iOS .NET is always compiled ahead of time and
-maps none.
+start**: the most of each your release maps, per OS version, processor and page size, with the runtime
+and build configuration you ship. A build compiled ahead of time (`-p:RunAOTCompilation=true`) maps
+less. On iOS .NET is compiled ahead of time and maps none. Read these figures together with the other
+measurements, against profiles of your own releases, and start in observation mode until you know what
+your genuine users' phones show.
 
-The app's own code in memory (`code_integrity`) is compared with its files as the plugin compares it; on
-Android a .NET app's own native code is the .NET runtime and its host (`libmonosgen-2.0.so`,
-`libmonodroid.so`, `libxamarin-app.so` and the `System.*` native libraries, or the APK they are mapped
-from), so `app_expected_bytes` is theirs.
+The code in memory (`code_integrity`) is compared with its files as the plugin compares it. On Android
+the `app` region is the app's own: the APKs it was installed from, by their exact paths, and the .NET
+runtime and its host by name (`libmonosgen-2.0.so`, `libmonodroid.so`, `libxamarin-app.so` and the
+`System.*` native libraries), so `app_expected_bytes` is theirs. `app_complete` is complete over that
+region, not over all of the app's code: the app's own executable files mapped outside it — an assembly
+compiled ahead of time and extracted (`libaot-*.dll.so`), another library — are counted in
+`app_outside_count` and named in `app_outside_files`. Code the runtime compiles while the app runs has no
+file to compare with, and is not compared.
 
 ## What the package never does
 

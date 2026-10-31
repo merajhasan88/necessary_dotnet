@@ -19,6 +19,10 @@ namespace Necessary
     /// </summary>
     public sealed class AppleStepUpKey : INativeStepUpKey
     {
+        // As for the installation key: making and deleting run one at a time in
+        // the process. Never held while the person is asked.
+        private static readonly object KeyLock = new object();
+
         private const int MaxPayloadBytes = 65536;
         private const string LabelPrefix = "stepup:";
         private const long PasscodeNotSet = -5;
@@ -89,7 +93,7 @@ namespace Necessary
 
             var domain = error.Domain;
             var code = (long)error.Code;
-            var text = error.LocalizedDescription ?? "unknown error";
+            var text = AppleNative.Describe(error);
 
             // errSecUserCanceled; LAError userCancel, appCancel, systemCancel.
             if ((domain == OsStatusErrorDomain && code == -128)
@@ -108,6 +112,14 @@ namespace Necessary
         }
 
         private StepUpKeyMetadata GetOrCreateKey(string factor)
+        {
+            lock (KeyLock)
+            {
+                return LoadOrMakeKey(factor);
+            }
+        }
+
+        private StepUpKeyMetadata LoadOrMakeKey(string factor)
         {
             if (factor != "passcode" && factor != "biometric")
             {
@@ -212,6 +224,14 @@ namespace Necessary
         }
 
         private bool DeleteKey()
+        {
+            lock (KeyLock)
+            {
+                return DeleteKeyNow();
+            }
+        }
+
+        private bool DeleteKeyNow()
         {
             using var query = Query();
             var status = SecKeyChain.Remove(query);

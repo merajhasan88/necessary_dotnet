@@ -88,7 +88,7 @@ namespace Necessary
             catch (Exception error)
 #pragma warning restore CA1031
             {
-                installerUnread = AndroidNative.SimpleName(error);
+                installerUnread = Why(error);
                 installer = null;
             }
 
@@ -316,7 +316,7 @@ namespace Necessary
             catch (Exception error)
 #pragma warning restore CA1031
             {
-                return PortResult.Failure(AndroidNative.SimpleName(error));
+                return PortResult.Failure(Why(error));
             }
         }
 
@@ -601,13 +601,34 @@ namespace Necessary
         /// overwrites a prologue and shows up as a byte difference, whatever the
         /// hooking framework is called.
         /// </summary>
-        private static JsonObject ProbeCodeIntegrity()
+        private JsonObject ProbeCodeIntegrity()
         {
+            // The app's own: the APKs it was installed from (its region, by exact
+            // path) and the directories its files live in (what is outside the
+            // region but the app's, collector 10).
+            var info = context.ApplicationInfo!;
+            var apks = new[] { info.SourceDir }
+                .Concat(info.SplitSourceDirs ?? Array.Empty<string>())
+                .Where(path => !string.IsNullOrEmpty(path))
+                .Select(path => path!)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            var dirs = new[]
+                {
+                    string.IsNullOrEmpty(info.SourceDir) ? null : Path.GetDirectoryName(info.SourceDir) + "/",
+                    string.IsNullOrEmpty(info.DataDir) ? null : info.DataDir + "/",
+                    "/data/data/" + context.PackageName + "/",
+                    string.IsNullOrEmpty(info.DeviceProtectedDataDir) ? null : info.DeviceProtectedDataDir + "/",
+                }
+                .Where(dir => dir is not null)
+                .Select(dir => dir!)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
             var started = Stopwatch.StartNew();
             JsonObject native;
             try
             {
-                native = CodeIntegrityComparison.Compare(new ProcessMemory());
+                native = CodeIntegrityComparison.Compare(new ProcessMemory(), new AppOwn(apks, dirs));
             }
 #pragma warning disable CA1031 // Not compared: said so, never clean.
             catch (Exception error)
@@ -654,65 +675,21 @@ namespace Necessary
             }
 
             result["protect_restore_failures"] = native["protect_restore_failures"]!.DeepClone();
+
+            // The app's own executable files mapped outside the app region
+            // (collector 10): counted, and named, at most 32.
+            result["app_outside_count"] = native["app_outside_count"]!.DeepClone();
+            result["app_outside_files"] = native["app_outside_files"]!.DeepClone();
+
+            // Why nothing was compared: the memory map unreadable or empty, or no
+            // target mapped in it -- never a bucket read as complete.
+            var reason = native["reason"]?.GetValue<string>() ?? string.Empty;
+            if (native["checked"]?.GetValue<bool>() != true && reason.Length > 0)
+            {
+                result["reason"] = reason;
+            }
+
             return result;
-        }
-
-        /// <summary>This process: its maps, its memory read by pointer, mprotect and pread.</summary>
-        private sealed class ProcessMemory : ICodeIntegrityMemory
-        {
-            public IReadOnlyList<string> ReadMaps() => File.ReadAllLines("/proc/self/maps");
-
-            public bool Protect(ulong start, ulong length, int protection) =>
-                NativeMethods.Mprotect(unchecked((nint)start), unchecked((nuint)length), protection) == 0;
-
-            public void Read(ulong address, byte[] buffer, int count) =>
-                Marshal.Copy(unchecked((nint)address), buffer, 0, count);
-
-            public ICodeIntegrityFile? Open(string path)
-            {
-                try
-                {
-                    return new HandleFile(File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
-                }
-#pragma warning disable CA1031 // Not opened: its bytes are unreadable, counted as such.
-                catch (Exception)
-#pragma warning restore CA1031
-                {
-                    return null;
-                }
-            }
-        }
-
-        private sealed class HandleFile : ICodeIntegrityFile
-        {
-            private readonly SafeFileHandle handle;
-
-            public HandleFile(SafeFileHandle handle)
-            {
-                this.handle = handle;
-            }
-
-            public int ReadAt(long offset, byte[] buffer, int count)
-            {
-                try
-                {
-                    return RandomAccess.Read(handle, buffer.AsSpan(0, count), offset);
-                }
-#pragma warning disable CA1031 // A read that failed ends the comparison of this mapping.
-                catch (Exception)
-#pragma warning restore CA1031
-                {
-                    return -1;
-                }
-            }
-
-            public void Dispose() => handle.Dispose();
-        }
-
-        private static class NativeMethods
-        {
-            [DllImport("libc", EntryPoint = "mprotect", SetLastError = true)]
-            public static extern int Mprotect(nint address, nuint length, int protection);
         }
     }
 }

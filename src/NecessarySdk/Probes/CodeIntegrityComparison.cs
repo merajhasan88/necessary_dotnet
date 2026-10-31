@@ -1,15 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
+using System.Text;
 using System.Text.Json.Nodes;
+using System.Threading;
 
 namespace Necessary
 {
     /// <summary>What the comparison needs of the process: its memory map, its memory, protections and files.</summary>
     internal interface ICodeIntegrityMemory
     {
-        /// <summary><c>/proc/self/maps</c>, line by line; throws when it cannot be read.</summary>
-        IReadOnlyList<string> ReadMaps();
+        /// <summary><c>/proc/self/maps</c>, read whole; throws when it cannot be read.</summary>
+        string ReadMaps();
 
         /// <summary>mprotect: true when the protection was set.</summary>
         bool Protect(ulong start, ulong length, int protection);
@@ -29,15 +32,55 @@ namespace Necessary
     }
 
     /// <summary>
+    /// What the app owns: the APKs it was installed from, by exact path (base and
+    /// splits, as Android names them), and the directories its own files live in
+    /// (its install directory, its data directories), each ending in '/'.
+    /// </summary>
+    internal sealed class AppOwn
+    {
+        public AppOwn(IReadOnlyList<string> apks, IReadOnlyList<string> dirs)
+        {
+            Apks = apks;
+            Dirs = dirs;
+        }
+
+        /// <summary>Nothing owned: only the named libraries are the app's.</summary>
+        public static AppOwn None { get; } = new AppOwn(Array.Empty<string>(), Array.Empty<string>());
+
+        public IReadOnlyList<string> Apks { get; }
+
+        public IReadOnlyList<string> Dirs { get; }
+    }
+
+    /// <summary>
     /// The app's native code and the system libraries in memory compared with
     /// their files -- an inline hook changes bytes. The plugin's
-    /// <c>code_integrity.cpp</c>, translated: for each target library every
-    /// executable mapping is compared against the same bytes on disk, in three
-    /// buckets -- the core system libraries, the extended ones, the app's own --
-    /// each with what it was expected to compare, compared, skipped and could not
-    /// read, so a bucket that measured less than its targets says so instead of
+    /// <c>code_integrity.cpp</c>, translated: for each target every executable
+    /// mapping is compared against the same bytes on disk, in three buckets --
+    /// the core system libraries, the extended ones, the app's own -- each with
+    /// what it was expected to compare, compared, skipped and could not read,
+    /// so a bucket that measured less than its targets says so instead of
     /// reading clean.
     /// </summary>
+    /// <remarks>
+    /// Two rules from the release review of 2026-10-31. One inventory: the
+    /// memory map is read once, whole, and every bucket is taken from that
+    /// snapshot; a snapshot that cannot be read answers <c>checked</c> false with
+    /// a reason, no bucket complete, no byte count made up. Complete means every
+    /// target mapping in that snapshot compared. One comparison at a time,
+    /// process-wide: a comparison makes execute-only pages readable, reads them
+    /// and restores them, and two at once could read a page the other had just
+    /// made unreadable again, so every caller -- any DeviceTrust, any thread --
+    /// takes the same lock for the whole snapshot, unlock, read and restore. (It
+    /// does not make a library the app itself unloads meanwhile safe to read.)
+    /// And from the pass over the review's other items: the app region is the
+    /// app's own -- the APKs it was installed from, by exact path, and the
+    /// libraries named here. Whatever executable file of the app's own is mapped
+    /// but not in the region -- an ahead-of-time compiled assembly
+    /// (<c>libaot-*.dll.so</c>) a build extracted, another library -- is counted
+    /// and named (<c>app_outside_count</c>, <c>app_outside_files</c>), so the
+    /// report says what the region leaves out.
+    /// </remarks>
     internal static class CodeIntegrityComparison
     {
         /// <summary>
@@ -49,6 +92,9 @@ namespace Necessary
 
         /// <summary>Compared in 256 KiB chunks.</summary>
         public const int Chunk = 256 << 10;
+
+        /// <summary>The app's own executable files outside the region named, at most.</summary>
+        public const int OutsideNames = 32;
 
         public const int ProtRead = 0x1;
         public const int ProtWrite = 0x2;
@@ -64,15 +110,15 @@ namespace Necessary
         };
 
         /// <summary>
-        /// The app's own native code. The Flutter plugin names the Flutter engine
-        /// and the Dart AOT code; a .NET for Android app's own native code is the
-        /// .NET runtime and its host instead, so these are their names. A release
-        /// APK maps its native libraries straight out of the (uncompressed)
-        /// archive unless it extracts them, so <c>/proc/self/maps</c> shows them
-        /// backed by <c>base.apk</c>: <c>.apk</c> covers the mapped-from-archive
-        /// case (base and split APKs), and the names cover builds that extract.
+        /// The app's own native code by name. The Flutter plugin names the Flutter
+        /// engine and the Dart AOT code; a .NET for Android app's own native code
+        /// is the .NET runtime and its host instead, so these are their names. A
+        /// release APK maps its native libraries straight out of the
+        /// (uncompressed) archive unless it extracts them, so <c>/proc/self/maps</c>
+        /// shows them backed by <c>base.apk</c>: the app's own APKs are therefore
+        /// targets by their exact paths, and these names cover builds that extract.
         /// </summary>
-        public static readonly string[] App =
+        public static readonly string[] AppNamed =
         {
             "/libmonosgen-2.0.so",
             "/libmonodroid.so",
@@ -80,52 +126,39 @@ namespace Necessary
             "/libSystem.Native.so",
             "/libSystem.IO.Compression.Native.so",
             "/libSystem.Security.Cryptography.Native.Android.so",
-            ".apk",
         };
 
-        /// <summary>Compares the three buckets and answers the native side's figures, in its order.</summary>
-        public static JsonObject Compare(ICodeIntegrityMemory memory)
+        // Every comparison, from any thread of the process, one at a time.
+        private static readonly object Inspection = new object();
+
+        // The tests' witness that comparisons never overlap, as the native host test's.
+        internal static int InFlight;
+        internal static int MaxInFlight;
+
+        /// <summary>
+        /// Compares the three buckets and answers the native side's figures, in its
+        /// order: one snapshot of the memory map, the whole comparison one at a
+        /// time in the process.
+        /// </summary>
+        public static JsonObject Compare(ICodeIntegrityMemory memory, AppOwn own)
         {
-            var core = new Coverage();
-            var ext = new Coverage();
-            var app = new Coverage();
-            var counters = new Counters();
-            var names = new System.Text.StringBuilder();
-            var buffer = new byte[Chunk];
-            var memoryBuffer = new byte[Chunk];
-            CompareBucket(memory, Core, core, counters, buffer, memoryBuffer, names);
-            CompareBucket(memory, Extended, ext, counters, buffer, memoryBuffer, names);
-            CompareBucket(memory, App, app, counters, buffer, memoryBuffer, names);
-            var isChecked = core.Found + ext.Found + app.Found > 0;
-            return new JsonObject
+            lock (Inspection)
             {
-                ["checked"] = isChecked,
-                ["diff_bytes"] = core.Diff,
-                ["core_compared_bytes"] = core.Compared,
-                ["core_diff_bytes"] = core.Diff,
-                ["core_expected_bytes"] = core.Expected,
-                ["core_skipped_bytes"] = core.Skipped,
-                ["core_unreadable_bytes"] = core.Unreadable,
-                ["core_complete"] = core.Complete,
-                ["ext_compared_bytes"] = ext.Compared,
-                ["ext_diff_bytes"] = ext.Diff,
-                ["ext_libs_diff"] = ext.WithDiff,
-                ["ext_expected_bytes"] = ext.Expected,
-                ["ext_skipped_bytes"] = ext.Skipped,
-                ["ext_unreadable_bytes"] = ext.Unreadable,
-                ["ext_complete"] = ext.Complete,
-                ["app_compared_bytes"] = app.Compared,
-                ["app_diff_bytes"] = app.Diff,
-                ["app_libs_diff"] = app.WithDiff,
-                ["app_expected_bytes"] = app.Expected,
-                ["app_skipped_bytes"] = app.Skipped,
-                ["app_unreadable_bytes"] = app.Unreadable,
-                ["app_complete"] = app.Complete,
-                ["xom_regions_unlocked"] = counters.XomUnlocked,
-                ["xom_regions_unreadable"] = counters.XomUnreadable,
-                ["protect_restore_failures"] = counters.RestoreFailures,
-                ["diffed_libs"] = names.ToString(),
-            };
+                var now = Interlocked.Increment(ref InFlight);
+                if (now > Volatile.Read(ref MaxInFlight))
+                {
+                    Volatile.Write(ref MaxInFlight, now);
+                }
+
+                try
+                {
+                    return Inspect(memory, own);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref InFlight);
+                }
+            }
         }
 
         /// <summary>The protection a maps line's permissions describe.</summary>
@@ -151,11 +184,30 @@ namespace Necessary
         }
 
         /// <summary>
-        /// One maps line as the native side's <c>sscanf</c> reads it: the range,
-        /// the permissions, the offset and the path (at most 511 characters,
-        /// leading spaces skipped); null for a line without a path.
+        /// The executable, file-backed mappings of one snapshot: each line's range,
+        /// permissions, offset and path, the path whole (spaces kept, no length
+        /// limit), as the native side's parser reads them.
         /// </summary>
-        internal static (ulong Start, ulong End, string Perms, ulong Offset, string Path)? ParseLine(string line)
+        internal static List<Mapping> ExecutableMappings(string snapshot)
+        {
+            var found = new List<Mapping>();
+            foreach (var line in snapshot.Split('\n'))
+            {
+                if (ParseLine(line) is { } mapping && mapping.Perms.Length > 2 && mapping.Perms[2] == 'x' && mapping.End > mapping.Start)
+                {
+                    found.Add(mapping);
+                }
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// One maps line: the range, the permissions, the offset and the path --
+        /// everything after the inode and the spaces that follow it; null for a
+        /// line without a path.
+        /// </summary>
+        internal static Mapping? ParseLine(string line)
         {
             var index = 0;
             if (!HexField(line, ref index, '-', out var start) || !HexField(line, ref index, ' ', out var end))
@@ -169,7 +221,7 @@ namespace Necessary
                 return null;
             }
 
-            var perms = line.Substring(index, Math.Min(permsEnd - index, 7));
+            var perms = line.Substring(index, Math.Min(permsEnd - index, 4));
             index = permsEnd;
             SkipSpaces(line, ref index);
             if (!HexField(line, ref index, ' ', out var offset))
@@ -200,19 +252,150 @@ namespace Necessary
             }
 
             SkipSpaces(line, ref index);
-            var path = line.Substring(index).TrimEnd('\n');
-            if (path.Length == 0)
-            {
-                return null;
-            }
-
-            if (path.Length > 511)
-            {
-                path = path.Substring(0, 511);
-            }
-
-            return (start, end, perms, offset, path);
+            var path = line.Substring(index);
+            return path.Length == 0 ? null : new Mapping(start, end, perms, offset, path);
         }
+
+        private static JsonObject Inspect(ICodeIntegrityMemory memory, AppOwn own)
+        {
+            var core = new Coverage();
+            var ext = new Coverage();
+            var app = new Coverage();
+            var counters = new Counters();
+            var names = new StringBuilder();
+            var reason = string.Empty;
+            var outside = new SortedSet<string>(StringComparer.Ordinal);
+            string? snapshot;
+            try
+            {
+                snapshot = memory.ReadMaps();
+            }
+#pragma warning disable CA1031 // A memory map that cannot be read: nothing compared, and said why.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                snapshot = null;
+            }
+
+            if (snapshot is null)
+            {
+                reason = "maps_unreadable";
+            }
+            else if (snapshot.Length == 0)
+            {
+                reason = "maps_empty";
+            }
+            else
+            {
+                var mappings = ExecutableMappings(snapshot);
+                var selected = new bool[mappings.Count];
+                var buffer = new byte[Chunk];
+                var memoryBuffer = new byte[Chunk];
+                CompareBucket(memory, NamedTargets(Core), mappings, core, counters, buffer, memoryBuffer, selected, names);
+                CompareBucket(memory, NamedTargets(Extended), mappings, ext, counters, buffer, memoryBuffer, selected, names);
+                CompareBucket(memory, AppTargets(own), mappings, app, counters, buffer, memoryBuffer, selected, names);
+                outside = OutsideFiles(mappings, selected, own);
+                if (core.Found + ext.Found + app.Found == 0)
+                {
+                    reason = "no_target_mapped";
+                }
+            }
+
+            var isChecked = core.Found + ext.Found + app.Found > 0;
+            var listed = new SortedSet<string>(outside.Select(path => Take(BaseName(path), 128)), StringComparer.Ordinal);
+            var files = new JsonArray();
+            foreach (var name in listed.Take(OutsideNames))
+            {
+                files.Add(name);
+            }
+
+            return new JsonObject
+            {
+                ["checked"] = isChecked,
+                ["reason"] = isChecked ? string.Empty : reason,
+                ["diff_bytes"] = core.Diff,
+                ["core_compared_bytes"] = core.Compared,
+                ["core_diff_bytes"] = core.Diff,
+                ["core_expected_bytes"] = core.Expected,
+                ["core_skipped_bytes"] = core.Skipped,
+                ["core_unreadable_bytes"] = core.Unreadable,
+                ["core_complete"] = core.Complete,
+                ["ext_compared_bytes"] = ext.Compared,
+                ["ext_diff_bytes"] = ext.Diff,
+                ["ext_libs_diff"] = ext.WithDiff,
+                ["ext_expected_bytes"] = ext.Expected,
+                ["ext_skipped_bytes"] = ext.Skipped,
+                ["ext_unreadable_bytes"] = ext.Unreadable,
+                ["ext_complete"] = ext.Complete,
+                ["app_compared_bytes"] = app.Compared,
+                ["app_diff_bytes"] = app.Diff,
+                ["app_libs_diff"] = app.WithDiff,
+                ["app_expected_bytes"] = app.Expected,
+                ["app_skipped_bytes"] = app.Skipped,
+                ["app_unreadable_bytes"] = app.Unreadable,
+                ["app_complete"] = app.Complete,
+                ["xom_regions_unlocked"] = counters.XomUnlocked,
+                ["xom_regions_unreadable"] = counters.XomUnreadable,
+                ["protect_restore_failures"] = counters.RestoreFailures,
+                ["app_outside_count"] = outside.Count,
+                ["app_outside_files"] = files,
+                ["diffed_libs"] = names.ToString(),
+            };
+        }
+
+        /// <summary>A target: a path suffix ("/libc.so") or an exact path (one of the app's APKs), and the name a difference is reported under.</summary>
+        internal static List<Target> NamedTargets(IEnumerable<string> suffixes) =>
+            suffixes.Select(suffix => new Target(suffix, false, suffix.Substring(1))).ToList();
+
+        /// <summary>The app region: the named libraries, then the app's own APKs by exact path.</summary>
+        internal static List<Target> AppTargets(AppOwn own)
+        {
+            var targets = NamedTargets(AppNamed);
+            foreach (var apk in own.Apks)
+            {
+                if (!string.IsNullOrEmpty(apk))
+                {
+                    targets.Add(new Target(apk, true, BaseName(apk)));
+                }
+            }
+
+            return targets;
+        }
+
+        internal static bool Selects(Target target, string path) =>
+            target.Exact ? path == target.Match : path.EndsWith(target.Match, StringComparison.Ordinal);
+
+        /// <summary>
+        /// The app's own executable files mapped but in no bucket: their paths,
+        /// so the app region never reads as all of the app's code.
+        /// </summary>
+        internal static SortedSet<string> OutsideFiles(IReadOnlyList<Mapping> mappings, IReadOnlyList<bool> selected, AppOwn own)
+        {
+            var files = new SortedSet<string>(StringComparer.Ordinal);
+            for (var index = 0; index < mappings.Count; index++)
+            {
+                if (selected[index])
+                {
+                    continue;
+                }
+
+                var path = mappings[index].Path;
+                if (own.Dirs.Any(dir => dir.Length > 0 && path.StartsWith(dir, StringComparison.Ordinal)))
+                {
+                    files.Add(path);
+                }
+            }
+
+            return files;
+        }
+
+        private static string BaseName(string path)
+        {
+            var slash = path.LastIndexOf('/');
+            return slash < 0 ? path : path.Substring(slash + 1);
+        }
+
+        private static string Take(string value, int count) => value.Length <= count ? value : value.Substring(0, count);
 
         private static void SkipSpaces(string line, ref int index)
         {
@@ -240,83 +423,67 @@ namespace Necessary
             return true;
         }
 
-        /// <summary>Sums a bucket; appends the name of any library that differs.</summary>
+        /// <summary>Sums a bucket; appends the name of any target that differs.</summary>
         private static void CompareBucket(
             ICodeIntegrityMemory memory,
-            string[] suffixes,
+            IReadOnlyList<Target> targets,
+            IReadOnlyList<Mapping> mappings,
             Coverage coverage,
             Counters counters,
             byte[] buffer,
             byte[] memoryBuffer,
-            System.Text.StringBuilder names)
+            bool[] selected,
+            StringBuilder names)
         {
-            foreach (var suffix in suffixes)
+            foreach (var target in targets)
             {
                 var before = coverage.Diff;
-                if (!CompareOne(memory, suffix, coverage, counters, buffer, memoryBuffer))
+                if (!CompareOne(memory, target, mappings, coverage, counters, buffer, memoryBuffer, selected))
                 {
                     continue;
                 }
 
-                if (coverage.Diff > before)
+                if (coverage.Diff > before && names.Length + target.Name.Length + 1 < 480)
                 {
-                    var name = suffix.Substring(1);
-                    var need = name.Length + (names.Length > 0 ? 1 : 0);
-                    if (names.Length + need + 1 < 512)
+                    if (names.Length > 0)
                     {
-                        if (names.Length > 0)
-                        {
-                            names.Append(',');
-                        }
-
-                        names.Append(name);
+                        names.Append(',');
                     }
+
+                    names.Append(target.Name);
                 }
             }
         }
 
         /// <summary>
-        /// Compares every executable mapping ending with <paramref name="suffix"/>
-        /// against disk, adding what was measured to <paramref name="coverage"/>;
-        /// whether any mapping matched.
+        /// Compares every executable mapping of the snapshot the target selects
+        /// against disk, adding what was measured to <paramref name="coverage"/>
+        /// and marking each mapping selected; whether any mapping matched.
         /// </summary>
         private static bool CompareOne(
             ICodeIntegrityMemory memory,
-            string suffix,
+            Target target,
+            IReadOnlyList<Mapping> mappings,
             Coverage coverage,
             Counters counters,
             byte[] buffer,
-            byte[] memoryBuffer)
+            byte[] memoryBuffer,
+            bool[] selected)
         {
-            IReadOnlyList<string> lines;
-            try
-            {
-                lines = memory.ReadMaps();
-            }
-#pragma warning disable CA1031 // As the native side: maps that cannot be opened match nothing.
-            catch (Exception)
-#pragma warning restore CA1031
-            {
-                return false;
-            }
-
             var any = false;
             var diffBefore = coverage.Diff;
-            foreach (var line in lines)
+            for (var index = 0; index < mappings.Count; index++)
             {
-                var parsed = ParseLine(line);
-                if (parsed is not { } mapping || mapping.Perms.Length < 3 || mapping.Perms[2] != 'x')
-                {
-                    continue;
-                }
+                var mapping = mappings[index];
 
                 // Select the target before touching any protection: a mapping
-                // that is not measured is never modified.
-                if (!mapping.Path.EndsWith(suffix, StringComparison.Ordinal) || mapping.End <= mapping.Start)
+                // that is not measured is never modified. One mapping, one bucket.
+                if (!Selects(target, mapping.Path) || selected[index])
                 {
                     continue;
                 }
 
+                selected[index] = true;
                 any = true;
                 var span = (long)(mapping.End - mapping.Start);
                 coverage.Expected += span;
@@ -442,6 +609,12 @@ namespace Necessary
 
             public bool Complete => Expected > 0 && Compared == Expected;
         }
+
+        /// <summary>One executable mapping of the snapshot.</summary>
+        internal sealed record Mapping(ulong Start, ulong End, string Perms, ulong Offset, string Path);
+
+        /// <summary>One target of a bucket.</summary>
+        internal sealed record Target(string Match, bool Exact, string Name);
 
         private sealed class Counters
         {

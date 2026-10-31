@@ -31,7 +31,10 @@ namespace Necessary
         });
 
         public static string Describe(NSError? error) =>
-            error?.LocalizedDescription ?? "unknown error";
+            error is null
+                ? "unknown error"
+                : (error.LocalizedDescription ?? "no description") + " (" + error.Domain + " "
+                    + ((long)error.Code).ToString(System.Globalization.CultureInfo.InvariantCulture) + ")";
 
         /// <summary>A payload's bytes, refusing an empty or malformed one as the plugin does.</summary>
         public static byte[] DecodePayload(string value, string what)
@@ -97,6 +100,12 @@ namespace Necessary
     /// </summary>
     public sealed class AppleInstallationKey : INativeInstallationKey
     {
+        // Making and deleting the key run one at a time in the process, whichever
+        // DeviceTrust asks: two first starts at once could each find no key and
+        // each add one under the same tag. Reentrant: a key found dead is deleted
+        // while it is being made.
+        private static readonly object KeyLock = new object();
+
         private const int MaxPayloadBytes = 65536;
         private readonly string alias;
 
@@ -127,6 +136,14 @@ namespace Necessary
             NecessaryApple.OnMainThread<string?>(() => UIDevice.CurrentDevice.IdentifierForVendor?.AsString() ?? string.Empty);
 
         private NativeKeyMetadata GetOrCreateKey()
+        {
+            lock (KeyLock)
+            {
+                return LoadOrMakeKey();
+            }
+        }
+
+        private NativeKeyMetadata LoadOrMakeKey()
         {
             var created = false;
             var key = LoadKey();
@@ -179,6 +196,14 @@ namespace Necessary
         }
 
         private bool DeleteKey()
+        {
+            lock (KeyLock)
+            {
+                return DeleteKeyNow();
+            }
+        }
+
+        private bool DeleteKeyNow()
         {
             using var query = Query();
             var status = SecKeyChain.Remove(query);

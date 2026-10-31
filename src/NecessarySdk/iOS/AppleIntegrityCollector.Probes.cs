@@ -73,8 +73,11 @@ namespace Necessary
             try
             {
                 var addresses = new JsonArray();
+
+                // More than a list holds is said, never cut off unsaid (collector 8).
+                var truncated = false;
                 var host = new byte[NiMaxHost];
-                for (var entry = head; entry != IntPtr.Zero && addresses.Count < 32;)
+                for (var entry = head; entry != IntPtr.Zero;)
                 {
                     // struct ifaddrs: next, name, flags (with padding), addr, ...
                     var next = Marshal.ReadIntPtr(entry, 0);
@@ -109,6 +112,12 @@ namespace Necessary
                         continue;
                     }
 
+                    if (addresses.Count >= 32)
+                    {
+                        truncated = true;
+                        break;
+                    }
+
                     addresses.Add(new JsonObject
                     {
                         ["interface"] = Marshal.PtrToStringUTF8(namePointer) ?? string.Empty,
@@ -116,7 +125,7 @@ namespace Necessary
                     });
                 }
 
-                return new JsonObject { ["status"] = "ok", ["addresses"] = addresses };
+                return new JsonObject { ["status"] = "ok", ["addresses"] = addresses, ["truncated"] = truncated };
             }
             finally
             {
@@ -216,6 +225,8 @@ namespace Necessary
                 var header = Native._dyld_get_image_header(index);
                 if (namePointer == IntPtr.Zero || header == IntPtr.Zero)
                 {
+                    // Counted, never dropped: it may be the app's (collector 8).
+                    images.Add(UnlistedImage((int)index));
                     continue;
                 }
 
@@ -244,13 +255,41 @@ namespace Necessary
         /// <summary>One bundle image's __TEXT in memory against its file.</summary>
         private static ImageOutcome CompareImage(string path, IntPtr header, IntPtr slide)
         {
-            var (span, problem) = TextSpanOfImage(header);
+            var (span, problem, uuid) = TextSpanOfImage(header);
             if (span is null)
             {
                 return ImageOutcome.Skipped(problem!.TextSize, problem.Reason);
             }
 
-            var (onDisk, readProblem) = ReadFileRange(path, span.SegmentFileOffset, span.SegmentSize);
+            // Where the image is in its file (collector 8): the file itself, or its
+            // arm64 slice in a universal file -- frameworks nothing thinned keep
+            // that form, and every offset of the image counts from the slice.
+            var (head, headProblem) = ReadFileRange(path, 0, 4096);
+            if (head is null)
+            {
+                return ImageOutcome.Unreadable(span.TextSize, headProblem!);
+            }
+
+            if (Arm64Slice(head) is not { } slice)
+            {
+                return ImageOutcome.Unreadable(span.TextSize, "neither a 64-bit Mach-O file nor a universal one with an arm64 image");
+            }
+
+            // The file must be the build that is running (collector 8): an app
+            // updated while it ran has the old code in memory and the new file on
+            // disk. Its header and load commands are read from the file and its
+            // LC_UUID compared with the loaded one's.
+            var commandsSize = (uint)Marshal.ReadInt32(header, 20);
+            if (uuid is not null)
+            {
+                var (fileHeader, _) = ReadFileRange(path, slice, 32 + commandsSize);
+                if (fileHeader is not null && BuildProblem(uuid, MachOUuid(fileHeader), span.TextSize) is { } other)
+                {
+                    return ImageOutcome.Skipped(other.TextSize, other.Reason);
+                }
+            }
+
+            var (onDisk, readProblem) = ReadFileRange(path, slice + span.SegmentFileOffset, span.SegmentSize);
             if (onDisk is null)
             {
                 // A bundle image that cannot be read is not clean.
@@ -287,26 +326,37 @@ namespace Necessary
             return ImageOutcome.Compared(span.TextSize, textDiffering, onDisk.Length, segmentDiffering);
         }
 
-        /// <summary>The __TEXT segment and its __text section, read from an image's load commands in memory.</summary>
-        private static (TextSpan? Span, CoverageProblem? Problem) TextSpanOfImage(IntPtr header)
+        /// <summary>
+        /// The __TEXT segment and its __text section, read from an image's load
+        /// commands in memory, its encryption and its LC_UUID as loaded. Every
+        /// command is read: LC_ENCRYPTION_INFO_64 follows the segments, so stopping
+        /// at __TEXT would never see it (collector 7); the LC_UUID is for the build
+        /// check (collector 8).
+        /// </summary>
+        private static (TextSpan? Span, CoverageProblem? Problem, byte[]? Uuid) TextSpanOfImage(IntPtr header)
         {
             const uint MhMagic64 = 0xfeedfacf;
             const uint LcSegment64 = 0x19;
+            const uint LcUuid = 0x1b;
+            const uint LcEncryptionInfo64 = 0x2c;
             const int HeaderSize = 32;
             const int SegmentCommandSize = 72;
             const int SectionSize = 80;
             if ((uint)Marshal.ReadInt32(header, 0) != MhMagic64)
             {
-                return (null, new CoverageProblem("not a 64-bit Mach-O image", 0));
+                return (null, new CoverageProblem("not a 64-bit Mach-O image", 0), null);
             }
 
             var commands = (uint)Marshal.ReadInt32(header, 16);
             var cursor = header + HeaderSize;
+            (TextSpan? Span, CoverageProblem? Problem)? found = null;
+            (uint Offset, uint Size, uint Id)? encryption = null;
+            byte[]? uuid = null;
             for (uint i = 0; i < commands; i++)
             {
                 var command = (uint)Marshal.ReadInt32(cursor, 0);
                 var commandSize = (uint)Marshal.ReadInt32(cursor, 4);
-                if (command == LcSegment64 && FixedName(cursor + 8) == "__TEXT")
+                if (command == LcSegment64 && found is null && FixedName(cursor + 8) == "__TEXT")
                 {
                     var vmaddr = (ulong)Marshal.ReadInt64(cursor, 24);
                     var fileoff = (ulong)Marshal.ReadInt64(cursor, 40);
@@ -326,13 +376,34 @@ namespace Necessary
                         section += SectionSize;
                     }
 
-                    return TextSpanOf(fileoff, filesize, vmaddr, text);
+                    found = TextSpanOf(fileoff, filesize, vmaddr, text);
+                }
+                else if (command == LcEncryptionInfo64)
+                {
+                    // encryption_info_command_64: cmd, cmdsize, cryptoff, cryptsize, cryptid, pad.
+                    encryption = ((uint)Marshal.ReadInt32(cursor, 8), (uint)Marshal.ReadInt32(cursor, 12), (uint)Marshal.ReadInt32(cursor, 16));
+                }
+                else if (command == LcUuid)
+                {
+                    uuid = new byte[16];
+                    Marshal.Copy(cursor + 8, uuid, 0, 16);
                 }
 
                 cursor += (int)commandSize;
             }
 
-            return (null, new CoverageProblem("no __TEXT segment", 0));
+            if (found is not { } result)
+            {
+                return (null, new CoverageProblem("no __TEXT segment", 0), uuid);
+            }
+
+            if (result.Span is { } span && encryption is { } crypt
+                && EncryptionProblem(crypt.Offset, crypt.Size, crypt.Id, span) is { } encrypted)
+            {
+                return (null, encrypted, uuid);
+            }
+
+            return (result.Span, result.Problem, uuid);
         }
 
         /// <summary>A 16-byte Mach-O name field, not necessarily NUL-terminated.</summary>
@@ -484,12 +555,14 @@ namespace Necessary
         {
             var tokens = new SortedSet<string>(StringComparer.Ordinal);
             var suspiciousCount = 0;
+            var unnamed = 0;
             var imageCount = Native._dyld_image_count();
             for (uint index = 0; index < imageCount; index++)
             {
                 var raw = Native._dyld_get_image_name(index);
                 if (raw == IntPtr.Zero)
                 {
+                    unnamed++;
                     continue;
                 }
 
@@ -516,13 +589,28 @@ namespace Necessary
                 list.Add(token);
             }
 
-            return new JsonObject
+            var result = new JsonObject
             {
                 ["status"] = "ok",
                 ["suspicious_tokens"] = list,
                 ["suspicious_image_count"] = suspiciousCount,
                 ["image_count"] = (int)imageCount,
             };
+
+            // A name dyld did not give could be the one listed (collector 8).
+            var unread = UnnamedImages(unnamed, (int)imageCount);
+            if (unread.Count > 0)
+            {
+                var parts = new JsonObject();
+                foreach (var part in unread)
+                {
+                    parts[part.Key] = part.Value;
+                }
+
+                result["unread"] = parts;
+            }
+
+            return result;
         }
 
         private static JsonObject ProbeEnvironment()

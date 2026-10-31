@@ -32,7 +32,7 @@ namespace Necessary
         // reports the app's code coverage image by image, and one location read
         // answers both location measurements; 6 sends the page size with device,
         // and asks screen capture of the screen showing the app.
-        private const int CollectorVersion = 6;
+        private const int CollectorVersion = 8;
         private const int MaxTextLength = 8192;
 
         private static readonly string[] VolunteeredProbes = { "device", "network" };

@@ -22,8 +22,8 @@ namespace Necessary
         /// <summary>Split APKs listed, at most: a backend's bound for any list.</summary>
         public const int MaxSplits = 64;
 
-        /// <summary>How a failure is named in <c>unread</c>: its type's simple name and its message.</summary>
-        public static Func<Exception, string> NameOf { get; set; } = error => error.GetType().Name;
+        /// <summary>How a failure and its causes are read for <c>unread</c>: the platform's reader (Android sets Java's).</summary>
+        public static Causes.Reader Read { get; set; } = Causes.DotNet;
 
         public static JsonObject Ok(params (string Key, object? Value)[] pairs)
         {
@@ -383,16 +383,15 @@ namespace Necessary
             return WithUnread(result, read.Unread);
         }
 
-        /// <summary>Why a read failed: the failure's simple type name and message, at most 160 characters.</summary>
+        /// <summary>
+        /// Why a read failed, for <c>unread</c> and a probe's <c>error</c>: the
+        /// failure and every cause beneath it (<see cref="Causes"/>), within the
+        /// contract's 160 characters.
+        /// </summary>
         public static string Why(Exception? error)
         {
-            if (error is null)
-            {
-                return "unknown";
-            }
-
-            var message = error.Message;
-            return Take(NameOf(error) + (string.IsNullOrEmpty(message) ? string.Empty : ": " + message), 160);
+            var chain = Causes.Chain(error, null, Read);
+            return Take(chain.Length == 0 ? "unknown" : chain, 160);
         }
 
         public static string Take(string value, int count) => value.Length <= count ? value : value.Substring(0, count);

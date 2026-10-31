@@ -268,5 +268,101 @@ namespace Necessary.Tests
                 && (string?)unasked["status"] == "ok" && Int(unasked, "external_displays") == 0);
             Assert.Equal(0, Int(ScreenCapture(false, -1), "external_displays"));
         }
+
+        // App Store encryption (collector 7): an image whose __text the App Store
+        // encrypted on disk is skipped with its bytes, never compared.
+        [Fact]
+        public void An_image_encrypted_over_its_text_is_skipped_with_its_text_bytes()
+        {
+            // A main executable: __TEXT at file offset 0, its __text from 0x4000, 1 MiB.
+            var span = new TextSpan(0, 0x200000, 0x1_0000_0000, 0x4000, 0x100000);
+            var encrypted = EncryptionProblem(0x4000, 0x1FC000, 1, span);
+            Assert.True(encrypted is not null && encrypted.TextSize == 0x100000 && encrypted.Reason.StartsWith("encrypted on disk", StringComparison.Ordinal));
+            Assert.Null(EncryptionProblem(0x4000, 0x1FC000, 0, span)); // cryptid 0, stored in the clear: compared
+            Assert.Null(EncryptionProblem(0x4000, 0, 1, span)); // an empty encrypted range: compared
+            Assert.Null(EncryptionProblem(0x104000, 0x1000, 1, span)); // after __text ends: compared
+            Assert.Null(EncryptionProblem(0, 0x4000, 1, span)); // before __text begins: compared
+            Assert.NotNull(EncryptionProblem(0x103FFF, 1, 1, span)); // one encrypted byte inside __text: skipped
+            var r = AppCoverage(
+                new[]
+                {
+                    Image("Runner", ImageOutcome.Skipped(0x100000, encrypted!.Reason), main: true),
+                    Image("Frameworks/App.framework/App", ImageOutcome.Compared(4096, 0, 8192, 0)),
+                },
+                0);
+            Assert.True(Bool(r, "app_complete") == false && Bool(r, "main_executable_compared") == false
+                && Int(r, "app_skipped_bytes") == 0x100000 && Int(r, "app_diff_bytes") == 0);
+        }
+
+        // Collector 8: the build that is running, the images dyld cannot name.
+        private static readonly byte[] Running = Enumerable.Range(0, 16).Select(i => (byte)i).ToArray();
+        private static readonly byte[] Updated = Enumerable.Range(100, 16).Select(i => (byte)i).ToArray();
+
+        /// <summary>A 64-bit Mach-O header with a __TEXT segment command and, optionally, an LC_UUID.</summary>
+        private static byte[] MachO(byte[]? uuid, uint magic = 0xfeedfacf)
+        {
+            static IEnumerable<byte> Le(long value) => Enumerable.Range(0, 4).Select(i => (byte)((value >> (8 * i)) & 0xff));
+            var segment = Le(0x19).Concat(Le(72)).Concat(new byte[64]).ToArray();
+            var uuidCommand = uuid is null ? Array.Empty<byte>() : Le(0x1b).Concat(Le(24)).Concat(uuid).ToArray();
+            var commands = segment.Concat(uuidCommand).ToArray();
+            var count = uuid is null ? 1 : 2;
+            return Le(magic).Concat(Le(0x0100000c)).Concat(Le(0)).Concat(Le(2)).Concat(Le(count)).Concat(Le(commands.Length))
+                .Concat(Le(0)).Concat(Le(0)).Concat(commands).ToArray();
+        }
+
+        [Fact]
+        public void The_LC_UUID_is_read_from_a_files_header_and_load_commands()
+        {
+            Assert.Equal(Running, MachOUuid(MachO(Running)));
+            Assert.Null(MachOUuid(MachO(null)));
+            Assert.Null(MachOUuid(MachO(Running, magic: 0xcafebabe)));
+            Assert.Null(MachOUuid(MachO(Running).Take(100).ToArray())); // cut short: never bytes past the end
+            Assert.Null(MachOUuid(Array.Empty<byte>()));
+        }
+
+        [Fact]
+        public void An_image_is_compared_only_with_the_build_that_is_running()
+        {
+            Assert.Null(BuildProblem(Running, Running, 4096));
+            var other = BuildProblem(Running, Updated, 4096);
+            Assert.True(other is not null && other.TextSize == 4096 && other.Reason.Contains("LC_UUID differs", StringComparison.Ordinal));
+            Assert.NotNull(BuildProblem(Running, null, 4096)); // a file with no LC_UUID is not the image loaded
+            Assert.Null(BuildProblem(null, Updated, 4096)); // a loaded image with no LC_UUID: nothing to tell by
+
+            // The TrollStore case of 2026-10-31: the main executable skipped, no
+            // difference invented, incomplete.
+            var r = AppCoverage(new[] { Image("Runner", ImageOutcome.Skipped(191_160, other!.Reason), main: true), Flutter, App }, 435);
+            Assert.True(AddsUp(r) && Bool(r, "app_complete") == false && Int(r, "app_diff_bytes") == 0
+                && Int(r, "app_skipped_bytes") == 191_160 && Bool(r, "main_executable_compared") == false);
+        }
+
+        [Fact]
+        public void An_image_dyld_cannot_name_is_an_app_image_not_read_never_dropped()
+        {
+            var r = AppCoverage(new[] { Main, Flutter, App, UnlistedImage(7) }, 435);
+            Assert.True(AddsUp(r));
+            Assert.True(Bool(r, "app_complete") == false && Int(r, "app_images_unreadable") == 1 && Int(r, "app_unreadable_bytes") == 0);
+            Assert.Equal("dyld gave no name or header for it", (string?)(r["app_images_not_compared"] as JsonObject)?["image 7"]);
+            Assert.Empty(UnnamedImages(0, 412));
+            Assert.Equal(new Dictionary<string, string> { ["image_names"] = "2 of 412 could not be read" }, UnnamedImages(2, 412));
+        }
+
+        [Fact]
+        public void A_universal_file_is_compared_through_its_arm64_image()
+        {
+            static IEnumerable<byte> Be(long value) => Enumerable.Range(0, 4).Reverse().Select(i => (byte)((value >> (8 * i)) & 0xff));
+            Assert.Equal(0, Arm64Slice(MachO(Running)));
+
+            // One arm64 slice at 16384, as Flutter's App.framework is built.
+            var fat = Be(0xcafebabe).Concat(Be(1)).Concat(Be(0x0100000c)).Concat(Be(0)).Concat(Be(16384)).Concat(Be(5_830_480)).Concat(Be(14)).ToArray();
+            Assert.Equal(16384, Arm64Slice(fat));
+            var twoArchs = Be(0xcafebabe).Concat(Be(2)).Concat(Be(0x01000007)).Concat(Be(3)).Concat(Be(4096)).Concat(Be(100)).Concat(Be(12))
+                .Concat(Be(0x0100000c)).Concat(Be(0)).Concat(Be(65536)).Concat(Be(100)).Concat(Be(14)).ToArray();
+            Assert.Equal(65536, Arm64Slice(twoArchs));
+            var noArm = Be(0xcafebabe).Concat(Be(1)).Concat(Be(0x01000007)).Concat(Be(3)).Concat(Be(4096)).Concat(Be(100)).Concat(Be(12)).ToArray();
+            Assert.Null(Arm64Slice(noArm));
+            Assert.Null(Arm64Slice(fat.Take(12).ToArray())); // a universal header cut short
+            Assert.Null(Arm64Slice(new byte[8])); // neither
+        }
     }
 }

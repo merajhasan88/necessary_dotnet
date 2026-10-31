@@ -64,6 +64,157 @@ namespace Necessary
                 (long)size), null);
         }
 
+        /// <summary>
+        /// Whether an image's encryption keeps its __text from being compared, or
+        /// null. The App Store encrypts an app's code on disk
+        /// (LC_ENCRYPTION_INFO_64, <c>cryptid</c> 1) and iOS decrypts it as it maps
+        /// it, so a genuine image's file and memory differ in every encrypted byte.
+        /// An encrypted range that overlaps __text makes the image one that cannot
+        /// be compared: skipped, with its __text bytes -- never compared, never
+        /// clean. Offsets are the file's, as <paramref name="span"/>'s are;
+        /// <c>cryptid</c> 0 is an image stored in the clear (collector 7).
+        /// </summary>
+        public static CoverageProblem? EncryptionProblem(uint cryptOffset, uint cryptSize, uint cryptId, TextSpan span)
+        {
+            if (cryptId == 0 || cryptSize == 0)
+            {
+                return null;
+            }
+
+            var textStart = (ulong)span.SegmentFileOffset + (ulong)span.TextOffsetInSegment;
+            var textEnd = textStart + (ulong)span.TextSize;
+            var cryptStart = (ulong)cryptOffset;
+            var cryptEnd = cryptStart + cryptSize;
+            if (cryptStart >= textEnd || textStart >= cryptEnd)
+            {
+                return null;
+            }
+
+            return new CoverageProblem("encrypted on disk (App Store): its code cannot be compared with its file", span.TextSize);
+        }
+
+        /// <summary>
+        /// Where the arm64 image starts in its file: 0 when the file is a 64-bit
+        /// Mach-O image; the arm64 slice's offset in a universal ("fat") file, the
+        /// form a build keeps its frameworks in when nothing thinned them (an ad
+        /// hoc or enterprise install, say); null when it is neither. The image's own
+        /// offsets count from there, never from the file's start (collector 8).
+        /// </summary>
+        public static long? Arm64Slice(IReadOnlyList<byte> head)
+        {
+            long? Big(int at) => at + 4 <= head.Count
+                ? ((long)head[at] << 24) | ((long)head[at + 1] << 16) | ((long)head[at + 2] << 8) | head[at + 3]
+                : null;
+            if (head.Count < 8)
+            {
+                return null;
+            }
+
+            var little = (long)head[0] | ((long)head[1] << 8) | ((long)head[2] << 16) | ((long)head[3] << 24);
+            if (little == 0xfeedfacf)
+            {
+                return 0;
+            }
+
+            if (Big(0) != 0xcafebabe || Big(4) is not { } count || count >= 64)
+            {
+                return null;
+            }
+
+            for (var index = 0; index < count; index++)
+            {
+                if (Big(8 + (index * 20)) is not { } cpu || Big(8 + (index * 20) + 8) is not { } offset)
+                {
+                    return null;
+                }
+
+                if (cpu == 0x0100000c)
+                {
+                    return offset; // CPU_TYPE_ARM64
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// The LC_UUID of a 64-bit Mach-O image, from its header and load commands
+        /// as read from its file, or null when they hold none or cannot be walked.
+        /// </summary>
+        public static byte[]? MachOUuid(IReadOnlyList<byte> bytes)
+        {
+            long Word(int at) => (long)bytes[at] | ((long)bytes[at + 1] << 8) | ((long)bytes[at + 2] << 16) | ((long)bytes[at + 3] << 24);
+            if (bytes.Count < 32 || Word(0) != 0xfeedfacf)
+            {
+                return null;
+            }
+
+            long offset = 32;
+            var commands = Word(16);
+            for (long index = 0; index < commands; index++)
+            {
+                if (offset + 8 > bytes.Count)
+                {
+                    return null;
+                }
+
+                var command = Word((int)offset);
+                var size = Word((int)offset + 4);
+                if (size < 8 || offset + size > bytes.Count)
+                {
+                    return null;
+                }
+
+                if (command == 0x1b)
+                {
+                    // LC_UUID
+                    return size >= 24 ? bytes.Skip((int)offset + 8).Take(16).ToArray() : null;
+                }
+
+                offset += size;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Whether the file on disk is the build that was loaded: its LC_UUID
+        /// against the loaded image's. An app updated while it ran -- TrollStore
+        /// installs over a running app, an in-place update, a development install
+        /// -- runs the old code with the new file on disk, and the two then differ
+        /// in many bytes nobody changed: such an image is skipped with its __text
+        /// bytes, never compared. Null when they match, or the loaded image has no
+        /// LC_UUID to tell by (collector 8).
+        /// </summary>
+        public static CoverageProblem? BuildProblem(byte[]? loaded, byte[]? onDisk, long textSize)
+        {
+            if (loaded is null || (onDisk is not null && loaded.AsSpan().SequenceEqual(onDisk)))
+            {
+                return null;
+            }
+
+            return new CoverageProblem(
+                "another build on disk than the one running (LC_UUID differs): the app was updated while it ran",
+                textSize);
+        }
+
+        /// <summary>
+        /// An image dyld counts but gives no name or header for (it is being
+        /// unloaded as the list is walked): never dropped unsaid. It may be the
+        /// app's, so it is an app image that could not be read, with no bytes.
+        /// </summary>
+        public static AppImage UnlistedImage(int index) =>
+            new AppImage("image " + index.ToString(CultureInfo.InvariantCulture), false, ImageOutcome.Unreadable(0, "dyld gave no name or header for it"));
+
+        /// <summary>The images whose names dyld did not give, as <c>unread</c> says it: never a shorter list read as all of them.</summary>
+        public static IReadOnlyDictionary<string, string> UnnamedImages(int missing, int total) =>
+            missing > 0
+                ? new Dictionary<string, string>
+                {
+                    ["image_names"] = missing.ToString(CultureInfo.InvariantCulture) + " of " + total.ToString(CultureInfo.InvariantCulture) + " could not be read",
+                }
+                : new Dictionary<string, string>();
+
         /// <summary>Why a read of <paramref name="wanted"/> bytes is not the whole of them, or null: a short read is unreadable, never a comparison of part.</summary>
         public static string? ReadProblem(long got, long wanted) =>
             got == wanted

@@ -43,7 +43,7 @@ namespace Necessary
         //     error, or names the parts it could not read in "unread". One
         //     location read answers both location measurements, which carry its
         //     fix_time.
-        private const int CollectorVersion = 8;
+        private const int CollectorVersion = 10;
 
         // Apps listed per capability, at most.
         private const int MaxApps = 32;
@@ -117,7 +117,7 @@ namespace Necessary
         public AndroidIntegrityCollector(Context context)
         {
             this.context = context ?? throw new ArgumentNullException(nameof(context));
-            AndroidProbeReads.NameOf = AndroidNative.SimpleName;
+            AndroidProbeReads.Read = AndroidNative.Read;
         }
 
         /// <inheritdoc />
@@ -231,7 +231,7 @@ namespace Necessary
             catch (Exception error)
 #pragma warning restore CA1031
             {
-                return new CommandResult(false, false, null, string.Empty, AndroidNative.SimpleName(error));
+                return new CommandResult(false, false, null, string.Empty, Why(error));
             }
 
             var output = new StringBuilder();
@@ -257,7 +257,7 @@ namespace Necessary
                 catch (Exception error)
 #pragma warning restore CA1031
                 {
-                    readError = AndroidNative.SimpleName(error);
+                    readError = Why(error);
                 }
             })
             {
@@ -384,11 +384,16 @@ namespace Necessary
             catch (Exception error)
 #pragma warning restore CA1031
             {
+                // Its words, then every cause beneath them: the kind alone
+                // (error_type) says little of an Android 9 keystore failure.
+                var (_, words, beneath) = AndroidNative.Read(error);
                 return new JsonObject
                 {
                     ["status"] = "error",
                     ["error_type"] = AndroidNative.SimpleName(error),
-                    ["error"] = Take(string.IsNullOrEmpty(error.Message) ? "probe failed" : error.Message, 240),
+                    ["error"] = Take(
+                        Causes.WithCauses(string.IsNullOrEmpty(words) ? "probe failed" : words!, beneath, AndroidNative.KeystoreDetail, AndroidNative.Read),
+                        240),
                 };
             }
         }

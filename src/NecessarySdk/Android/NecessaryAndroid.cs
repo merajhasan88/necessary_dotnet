@@ -168,7 +168,18 @@ namespace Necessary
                 ActivityCreated?.Invoke(activity);
             }
 
-            public void OnActivityDestroyed(Activity activity) => Forget(activity);
+            public void OnActivityDestroyed(Activity activity)
+            {
+                Forget(activity);
+
+                // Gone for good, not recreated for a configuration change: a
+                // request it launched whose screen never opened would wait for an
+                // answer that can never come, and hold every later approval.
+                if (activity.IsFinishing && !activity.IsChangingConfigurations)
+                {
+                    ProxyActivity.CancelLaunchedBy(activity);
+                }
+            }
 
             public void OnActivityPaused(Activity activity)
             {
@@ -202,6 +213,12 @@ namespace Necessary
         public string[]? Permissions { get; }
 
         public Result ResultCode { get; set; } = Result.Canceled;
+
+        /// <summary>The activity that asked: a request it launched that never opened ends when it is gone.</summary>
+        public WeakReference<Activity>? Launcher { get; set; }
+
+        /// <summary>Whether its transparent activity opened, and now owns the answer.</summary>
+        public bool Started { get; set; }
 
         public TaskCompletionSource<bool> Done { get; } =
             new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -240,6 +257,7 @@ namespace Necessary
             }
 
             var id = Interlocked.Increment(ref nextId);
+            request.Launcher = new WeakReference<Activity>(activity);
             Pending[id] = request;
             _ = NecessaryAndroid.OnMainThreadAsync(() =>
             {
@@ -277,6 +295,8 @@ namespace Necessary
                 Finish();
                 return;
             }
+
+            request.Started = true;
 
             try
             {
@@ -335,6 +355,24 @@ namespace Necessary
             }
 
             base.OnDestroy();
+        }
+
+        /// <summary>Ends, as cancelled, every request <paramref name="launcher"/> launched whose screen never opened.</summary>
+        internal static void CancelLaunchedBy(Activity launcher)
+        {
+            foreach (var pending in Pending)
+            {
+                var request = pending.Value;
+                if (!request.Started
+                    && request.Launcher is not null
+                    && request.Launcher.TryGetTarget(out var asked)
+                    && ReferenceEquals(asked, launcher)
+                    && Pending.TryRemove(pending.Key, out _))
+                {
+                    request.ResultCode = Result.Canceled;
+                    request.Done.TrySetResult(false);
+                }
+            }
         }
 
         private void Complete(Result resultCode)

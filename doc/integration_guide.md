@@ -1,6 +1,6 @@
-# Device Trust — what the app sends, and how your backend checks it
+# Necessary — what the app sends, and how your backend checks it
 
-The Device Trust plugins (Android, iOS, Flutter, React Native, .NET) are open source. They give your app
+The Necessary plugins (Android, iOS, Flutter, React Native, .NET) are open source. They give your app
 a key they never export (section 1 says where the phone keeps it), measurements of the phone and of the
 app running on it, and — if
 you turn them on — a second key that the person must unlock, and a PIN your backend checks, to approve
@@ -157,7 +157,7 @@ Your backend, in this order, refusing at the first failure:
 10. Marks the challenge used, in the same transaction.
 
 Only then read the measurements — and keep the signed bytes, or their SHA-256, with what you decided.
-Read them first by the contract's rules (`RULES.md`, section 6): a report whose figures contradict each
+Read them first by the contract's rules (`RULES.md`, sections 2 and 7): a report whose figures contradict each
 other is not a measurement, clean or otherwise; one with a requested measurement failed, unread or
 without its fields is incomplete — ask again rather than read it as clean; only then do your own rules
 weigh what it found. Decide deliberately what an incomplete report may still do.

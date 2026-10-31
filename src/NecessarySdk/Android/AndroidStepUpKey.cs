@@ -56,8 +56,17 @@ namespace Necessary
         private const int MaxPayloadBytes = 65536;
         private const int MaxWindowSeconds = 3600;
 
+        // Making and deleting the key run one at a time in the process, whichever
+        // DeviceTrust asks (as for the installation key); never held while the
+        // person is asked.
+        private static readonly object KeyLock = new object();
+
         private readonly Context context;
         private readonly string keyAlias;
+
+        // Never holds a key: deleting it says whether the keystore answers
+        // (KeyPresence).
+        private readonly string probeAlias;
         private readonly object gate = new object();
         private bool pendingConfirm;
 
@@ -66,6 +75,7 @@ namespace Necessary
         {
             this.context = context ?? throw new ArgumentNullException(nameof(context));
             keyAlias = context.PackageName + ".device_recognition.stepup_key.v1";
+            probeAlias = keyAlias + ".probe";
         }
 
         /// <inheritdoc />
@@ -100,7 +110,8 @@ namespace Necessary
                 }
                 catch (Exception error)
                 {
-                    answer.TrySetException(new NativeKeyException("NATIVE_STEPUP_ERROR", error.Message ?? "The step-up signature failed.", error));
+                    // Whatever failed before the prompt, said with its causes.
+                    answer.TrySetException(AndroidNative.Failure("NATIVE_STEPUP_ERROR", "The step-up signature failed.", error));
                 }
 
                 return true;
@@ -121,12 +132,12 @@ namespace Necessary
             }
             catch (GeneralSecurityException error)
             {
-                throw new NativeKeyException("KEYSTORE_UNAVAILABLE", "AndroidKeyStore is unavailable.", error);
+                throw AndroidNative.Failure("KEYSTORE_UNAVAILABLE", "AndroidKeyStore is unavailable.", error);
             }
         }
 
         private static NativeKeyException SigningFailed(Exception error) =>
-            new NativeKeyException("STEPUP_SIGNING_FAILED", "AndroidKeyStore could not sign with the step-up key: " + error.Message, error);
+            AndroidNative.Failure("STEPUP_SIGNING_FAILED", "AndroidKeyStore could not sign with the step-up key.", error);
 
         private static NativeKeyException PromptError(BiometricErrorCode errorCode, string? errString)
         {
@@ -145,6 +156,14 @@ namespace Necessary
         }
 
         private StepUpKeyMetadata GetOrCreateKey(string factor, string mode, int windowSeconds)
+        {
+            lock (KeyLock)
+            {
+                return LoadOrMakeKey(factor, mode, windowSeconds);
+            }
+        }
+
+        private StepUpKeyMetadata LoadOrMakeKey(string factor, string mode, int windowSeconds)
         {
             if (factor != FactorPasscode && factor != FactorBiometric)
             {
@@ -165,11 +184,17 @@ namespace Necessary
 
             // An existing key is checked before the screen lock: removing the
             // lock is what kills it, so this is where the app can say so precisely.
+            // A key is made only where the keystore, answering, holds none: a
+            // lookup that failed reads as "no key", and generating would replace
+            // the key the backend holds.
             var keyStore = LoadKeyStore();
-            if (keyStore.ContainsAlias(keyAlias))
+            var (answer, cause) = Presence(keyStore);
+            var existing = answer switch
             {
-                LiveEntry(keyStore);
-            }
+                KeyPresence.Answer.Present => LiveEntry(keyStore),
+                KeyPresence.Answer.Absent => null,
+                _ => throw KeyUnavailable(cause),
+            };
 
             RequireDeviceCredential();
             if (factor == FactorBiometric && !OperatingSystem.IsAndroidVersionAtLeast(28))
@@ -177,14 +202,13 @@ namespace Necessary
                 throw new NativeKeyException("STEPUP_UNSUPPORTED", "Biometric step-up needs Android 9 (API 28) or newer.");
             }
 
-            var created = false;
-            if (!keyStore.ContainsAlias(keyAlias))
+            var created = existing is null;
+            if (created)
             {
                 GenerateKeyPair(keyStore, factor, mode, windowSeconds);
-                created = true;
             }
 
-            var entry = LiveEntry(keyStore);
+            var entry = existing ?? LiveEntry(keyStore);
             var publicKey = Android.Runtime.Extensions.JavaCast<IECPublicKey>(entry.Certificate!.PublicKey)
                 ?? throw new NativeKeyException("INVALID_PUBLIC_KEY", "AndroidKeyStore did not return an EC public key for the step-up key.");
             var info = KeyInfoOf(entry);
@@ -226,9 +250,15 @@ namespace Necessary
                 }
 
                 var keyStore = LoadKeyStore();
-                if (!keyStore.ContainsAlias(keyAlias))
+                var (answer, cause) = Presence(keyStore);
+                if (answer == KeyPresence.Answer.Absent)
                 {
                     throw new NativeKeyException("STEPUP_KEY_NOT_FOUND", "No step-up key exists on this installation.");
+                }
+
+                if (answer == KeyPresence.Answer.Unavailable)
+                {
+                    throw KeyUnavailable(cause);
                 }
 
                 var entry = LiveEntry(keyStore);
@@ -272,9 +302,9 @@ namespace Necessary
             }
             catch (GeneralSecurityException error)
             {
-                done.TrySetException(new NativeKeyException(
+                done.TrySetException(AndroidNative.Failure(
                     "STEPUP_SIGNING_FAILED",
-                    "AndroidKeyStore could not prepare the step-up signature: " + error.Message,
+                    "AndroidKeyStore could not prepare the step-up signature.",
                     error));
             }
         }
@@ -363,7 +393,9 @@ namespace Necessary
                     pendingConfirm = false;
                 }
 
-                done.TrySetException(new NativeKeyException("NATIVE_STEPUP_ERROR", error.Message ?? "The step-up signature failed.", error));
+                // The confirmation never opened, or its screen failed: nothing waits
+                // for it, and the approval says why.
+                done.TrySetException(AndroidNative.Failure("NATIVE_STEPUP_ERROR", "The step-up signature failed.", error));
                 return;
             }
 
@@ -422,7 +454,7 @@ namespace Necessary
             }
             catch (UserNotAuthenticatedException error)
             {
-                done.TrySetException(new NativeKeyException(
+                done.TrySetException(AndroidNative.Failure(
                     "STEPUP_AUTH_FAILED",
                     "The keystore did not accept the authentication for the step-up key.",
                     error));
@@ -440,27 +472,31 @@ namespace Necessary
         /// </summary>
         private NativeKeyException DiscardDeadKey(Exception cause)
         {
-            // Say whether the removal actually happened: on an Android 9 phone a
-            // dead key's alias survived deleteEntry while the screen lock was off.
-            string removal;
-            try
+            lock (KeyLock)
             {
-                var keyStore = LoadKeyStore();
-                keyStore.DeleteEntry(keyAlias);
-                removal = keyStore.ContainsAlias(keyAlias) ? "could not be removed (alias still present)" : "has been removed";
-            }
+                // Say whether the removal actually happened: on an Android 9 phone a
+                // dead key's alias survived deleteEntry while the screen lock was off.
+                string removal;
+                try
+                {
+                    var keyStore = LoadKeyStore();
+                    keyStore.DeleteEntry(keyAlias);
+                    removal = keyStore.ContainsAlias(keyAlias) ? "could not be removed (alias still present)" : "has been removed";
+                }
 #pragma warning disable CA1031 // The report says what happened, whatever happened.
-            catch (Exception error)
+                catch (Exception error)
 #pragma warning restore CA1031
-            {
-                removal = "could not be removed (" + AndroidNative.SimpleName(error) + ": " + error.Message + ")";
-            }
+                {
+                    // Not the key's cause: the removal's own failure, said in full here.
+                    removal = "could not be removed (" + Causes.Chain(error, AndroidNative.KeystoreDetail, AndroidNative.Read) + ")";
+                }
 
-            return new NativeKeyException(
-                "STEPUP_KEY_INVALIDATED",
-                "The step-up key was invalidated (the screen lock or enrolled biometrics changed) and " + removal
-                + ". Re-enrol the installation to get a new one. [cause " + AndroidNative.SimpleName(cause) + "]",
-                cause);
+                return AndroidNative.Failure(
+                    "STEPUP_KEY_INVALIDATED",
+                    "The step-up key was invalidated (the screen lock or enrolled biometrics changed) and " + removal
+                    + ". Re-enrol the installation to get a new one.",
+                    cause);
+            }
         }
 
         private void GenerateKeyPair(KeyStoreType keyStore, string factor, string mode, int windowSeconds)
@@ -541,31 +577,51 @@ namespace Necessary
             }
             catch (Exception error)
             {
-                throw new NativeKeyException(
+                throw AndroidNative.Failure(
                     "STEPUP_KEY_GENERATION_FAILED",
-                    "AndroidKeyStore could not create the step-up key: " + error.Message,
+                    "AndroidKeyStore could not create the step-up key.",
                     error);
             }
         }
 
+        /// <summary>
+        /// Deletes the key, whatever a lookup says: a lookup that failed reads as
+        /// "no key", and skipping the deletion then would leave the key in place
+        /// after a reset. Whether one was there is for the answer only.
+        /// </summary>
         private bool DeleteKey()
         {
-            var keyStore = LoadKeyStore();
-            try
+            lock (KeyLock)
             {
-                if (keyStore.ContainsAlias(keyAlias))
+                var keyStore = LoadKeyStore();
+                try
                 {
+                    var existed = keyStore.ContainsAlias(keyAlias);
                     keyStore.DeleteEntry(keyAlias);
-                    return true;
-                }
+                    if (keyStore.ContainsAlias(keyAlias))
+                    {
+                        throw new NativeKeyException(
+                            "KEY_DELETE_FAILED",
+                            "AndroidKeyStore did not delete the step-up key: it is still present.");
+                    }
 
-                return false;
-            }
-            catch (GeneralSecurityException error)
-            {
-                throw new NativeKeyException("KEY_DELETE_FAILED", "AndroidKeyStore could not delete the step-up key.", error);
+                    return existed;
+                }
+                catch (GeneralSecurityException error)
+                {
+                    throw AndroidNative.Failure("KEY_DELETE_FAILED", "AndroidKeyStore could not delete the step-up key.", error);
+                }
             }
         }
+
+        private (KeyPresence.Answer Answer, Exception? Cause) Presence(KeyStoreType keyStore) =>
+            KeyPresence.Of(new AndroidInstallationKey.Lookup(keyStore, keyAlias, probeAlias));
+
+        private static NativeKeyException KeyUnavailable(Exception? cause) => AndroidNative.Failure(
+            "STEPUP_KEY_UNAVAILABLE",
+            "AndroidKeyStore could not be reached for the step-up key; the key was kept, never replaced. "
+            + "Try again; if this persists, re-enrol to replace it.",
+            cause);
 
         private void RequireDeviceCredential()
         {
@@ -577,61 +633,83 @@ namespace Necessary
         }
 
         /// <summary>
-        /// Loads the stored step-up key, removing it if it has died in place.
-        /// Removing the screen lock (or, for a biometric key, changing the
-        /// enrolled biometrics) invalidates an auth-bound key. On an Android 9
-        /// phone the alias survived while the entry could no longer be loaded;
-        /// newer keystores keep the entry and refuse initSign. Either way the key
-        /// is dead: delete it and report <c>STEPUP_KEY_INVALIDATED</c>. Any other
-        /// lookup failure is reported with its cause and the key is kept.
+        /// Loads the stored step-up key. Removing the screen lock (or, for a
+        /// biometric key, changing the enrolled biometrics) invalidates an
+        /// auth-bound key: Android says so when a signature starts
+        /// (KeyPermanentlyInvalidatedException), and only then is the key deleted
+        /// and <c>STEPUP_KEY_INVALIDATED</c> reported. A lookup that cannot
+        /// establish whether the key is usable keeps it:
+        /// <c>STEPUP_KEY_UNAVAILABLE</c>, retryable; any other keystore failure:
+        /// <c>KEY_LOOKUP_FAILED</c>, the key kept (<see cref="StepUpKeyEntry"/> decides).
         /// </summary>
         private KeyStoreType.PrivateKeyEntry LiveEntry(KeyStoreType keyStore)
         {
-            // An alias can outlive its private key: containsAlias true, isKeyEntry
-            // false, and getEntry throwing a bare UnsupportedOperationException.
-            // A certificate without its private key can never sign.
+            // Only Android's own word that the key is dead deletes it. An alias
+            // that outlived its private key on an Android 9 phone (isKeyEntry
+            // false, getEntry throwing UnsupportedOperationException) used to be
+            // deleted here, as did every lookup that could not say -- on Android 9
+            // a binder error also reads as isKeyEntry false. Those keys are kept.
+            KeyStoreType.PrivateKeyEntry? entry = null;
+            Exception? cause = null;
+            StepUpKeyEntry.Lookup lookup;
             if (!keyStore.IsKeyEntry(keyAlias))
             {
-                throw DiscardDeadKey(new IllegalStateException("The step-up alias holds no private key."));
+                lookup = StepUpKeyEntry.Lookup.NotKeyEntry;
+            }
+            else
+            {
+                try
+                {
+                    entry = keyStore.GetEntry(keyAlias, null) as KeyStoreType.PrivateKeyEntry;
+                    lookup = entry is null ? StepUpKeyEntry.Lookup.NotPrivateKey : StepUpKeyEntry.Lookup.PrivateKey;
+                }
+                catch (UnrecoverableKeyException error)
+                {
+                    cause = error;
+                    lookup = StepUpKeyEntry.Lookup.Unrecoverable;
+                }
+                catch (UnsupportedOperationException error)
+                {
+                    cause = error;
+                    lookup = StepUpKeyEntry.Lookup.Unsupported;
+                }
+                catch (GeneralSecurityException error)
+                {
+                    cause = error;
+                    lookup = StepUpKeyEntry.Lookup.OtherFailure;
+                }
             }
 
-            KeyStoreType.IEntry? loaded;
-            try
+            var start = StepUpKeyEntry.SignStart.NotTried;
+            if (entry is not null)
             {
-                loaded = keyStore.GetEntry(keyAlias, null);
-            }
-            catch (UnrecoverableKeyException error)
-            {
-                throw DiscardDeadKey(error);
-            }
-            catch (UnsupportedOperationException error)
-            {
-                throw DiscardDeadKey(error);
-            }
-            catch (GeneralSecurityException error)
-            {
-                throw new NativeKeyException(
-                    "KEY_LOOKUP_FAILED",
-                    "AndroidKeyStore could not load the step-up key: " + AndroidNative.SimpleName(error) + ": " + error.Message,
-                    error);
+                try
+                {
+                    Signature.GetInstance("SHA256withECDSA")!.InitSign(entry.PrivateKey);
+                    start = StepUpKeyEntry.SignStart.Started;
+                }
+                catch (KeyPermanentlyInvalidatedException error)
+                {
+                    cause = error;
+                    start = StepUpKeyEntry.SignStart.PermanentlyInvalidated;
+                }
+                catch (UserNotAuthenticatedException)
+                {
+                    start = StepUpKeyEntry.SignStart.NeedsAuthentication;
+                }
             }
 
-            var entry = loaded as KeyStoreType.PrivateKeyEntry
-                ?? throw DiscardDeadKey(new IllegalStateException("The step-up alias no longer holds a private key."));
-            try
+            return StepUpKeyEntry.Decide(lookup, start) switch
             {
-                Signature.GetInstance("SHA256withECDSA")!.InitSign(entry.PrivateKey);
-            }
-            catch (KeyPermanentlyInvalidatedException error)
-            {
-                throw DiscardDeadKey(error);
-            }
-            catch (UserNotAuthenticatedException)
-            {
-                // Alive: a windowed key outside its window only needs authentication.
-            }
-
-            return entry;
+                StepUpKeyEntry.Verdict.Usable => entry!,
+                StepUpKeyEntry.Verdict.Invalidated => throw DiscardDeadKey(cause!),
+                StepUpKeyEntry.Verdict.Unavailable => throw AndroidNative.Failure(
+                    "STEPUP_KEY_UNAVAILABLE",
+                    "AndroidKeyStore could not establish whether the step-up key is usable (lookup: "
+                    + StepUpKeyEntry.Name(lookup) + "); the key was kept. Try again; if this persists, re-enrol to replace it.",
+                    cause),
+                _ => throw AndroidNative.Failure("KEY_LOOKUP_FAILED", "AndroidKeyStore could not load the step-up key.", cause),
+            };
         }
 
         private static KeyInfo KeyInfoOf(KeyStoreType.PrivateKeyEntry entry)
@@ -642,7 +720,7 @@ namespace Necessary
             }
             catch (GeneralSecurityException error)
             {
-                throw new NativeKeyException("KEY_LOOKUP_FAILED", "AndroidKeyStore could not describe the step-up key.", error);
+                throw AndroidNative.Failure("KEY_LOOKUP_FAILED", "AndroidKeyStore could not describe the step-up key.", error);
             }
         }
 

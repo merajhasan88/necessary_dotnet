@@ -91,29 +91,49 @@ namespace Necessary
 #pragma warning restore CA1422
             var proxy = manager.DefaultProxy is not null
                 || !string.IsNullOrWhiteSpace(Java.Lang.JavaSystem.GetProperty("http.proxyHost"));
+            // Names are context; the two answers above stand without them. A
+            // listing that failed, whole or for one interface, is in unread: an
+            // empty or short list would read as "no such interface".
             var interfaces = new List<string>();
+            string? interfacesUnread = null;
             try
             {
                 var all = NetworkInterface.NetworkInterfaces;
                 while (all is not null && all.HasMoreElements)
                 {
-                    if (all.NextElement() is NetworkInterface item && item.IsUp && !item.IsLoopback)
+                    try
                     {
-                        interfaces.Add(Take(item.Name ?? string.Empty, 32));
+                        if (all.NextElement() is NetworkInterface item && item.IsUp && !item.IsLoopback)
+                        {
+                            interfaces.Add(Take(item.Name ?? string.Empty, 32));
+                        }
+                    }
+#pragma warning disable CA1031 // One interface that could not be read: said in unread.
+                    catch (Exception error)
+#pragma warning restore CA1031
+                    {
+                        interfacesUnread ??= Why(error);
                     }
                 }
             }
-#pragma warning disable CA1031 // Names are context; the two answers above stand without them.
-            catch (Exception)
+#pragma warning disable CA1031 // The listing that failed: said in unread.
+            catch (Exception error)
 #pragma warning restore CA1031
             {
+                interfacesUnread = Why(error);
             }
 
-            return Ok(
+            var result = Ok(
                 ("vpn_active", vpn),
                 ("http_proxy_configured", proxy),
                 ("transports", transports),
                 ("interfaces", interfaces.Distinct().Take(32).ToList()));
+            if (interfacesUnread is not null)
+            {
+                result["unread"] = new JsonObject { ["interfaces"] = interfacesUnread };
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -130,6 +150,9 @@ namespace Necessary
             }
 
             var addresses = new JsonArray();
+
+            // More than a list holds is said, never cut off unsaid.
+            var truncated = false;
             while (all.HasMoreElements)
             {
                 if (all.NextElement() is not NetworkInterface item || !item.IsUp || item.IsLoopback)
@@ -147,6 +170,7 @@ namespace Necessary
 
                     if (addresses.Count >= 32)
                     {
+                        truncated = true;
                         break;
                     }
 
@@ -160,7 +184,7 @@ namespace Necessary
                 }
             }
 
-            return Ok(("addresses", addresses));
+            return Ok(("addresses", addresses), ("truncated", truncated));
         }
 
         /// <summary>
@@ -256,11 +280,20 @@ namespace Necessary
 
             var services = new JsonArray();
             var reported = new HashSet<string>(StringComparer.Ordinal);
+            var undescribed = 0;
             foreach (var info in manager.GetEnabledAccessibilityServiceList(Android.AccessibilityServices.FeedbackFlags.AllMask) ?? new List<AccessibilityServiceInfo>())
             {
                 var service = info.ResolveInfo?.ServiceInfo;
                 if (service?.PackageName is not string package || service.Name is not string name)
                 {
+                    // The manager reports it, but not its app: counted as unread,
+                    // and never read as a service hiding from the manager.
+                    if (info.Id is string id && ComponentName.UnflattenFromString(id.Trim())?.FlattenToString() is string listed)
+                    {
+                        reported.Add(listed);
+                    }
+
+                    undescribed++;
                     continue;
                 }
 
@@ -302,6 +335,11 @@ namespace Necessary
             if (component?.PackageName is string keyboardPackage)
             {
                 result["keyboard"] = AppEntry(keyboardPackage, component.ClassName);
+            }
+
+            if (undescribed > 0)
+            {
+                result["unread"] = new JsonObject { ["services"] = undescribed + " enabled services the system did not describe" };
             }
 
             return result;

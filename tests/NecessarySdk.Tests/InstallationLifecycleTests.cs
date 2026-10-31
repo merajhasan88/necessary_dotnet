@@ -2,6 +2,7 @@
 // the platform lost (an Android reinstall), and an iOS reinstall that kept the
 // key but not the app's other data -- two of the package's calls at once, and
 // a reset or a close while calls still run.
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -146,6 +147,90 @@ namespace Necessary.Tests
         }
 
         [Fact]
+        public async Task A_keystore_that_cannot_be_reached_leaves_the_installation_as_it_was()
+        {
+            // start() fails with KEY_UNAVAILABLE and sends nothing, and the ID is
+            // kept for the key once the keystore answers.
+            var storage = new InMemorySecureStorage(new[] { new KeyValuePair<string, string>(Stored, "kept-installation") });
+            var keystore = new UnreachableKeystore();
+            var backend = new Backend();
+            var trust = DeviceTrust.Over(backend, store: new InstallationStore(keystore, storage), collector: new Collector(), hintReader: new NoHint());
+            var refused = await Assert.ThrowsAsync<NativeKeyException>(() => trust.StartAsync());
+            Assert.Equal("KEY_UNAVAILABLE", refused.Code);
+            Assert.Empty(backend.Paths);
+            Assert.Equal("kept-installation", await StoredId(storage));
+            Assert.True(keystore.Holds);
+            keystore.Reachable = true;
+            var again = await new InstallationStore(keystore, storage).LoadOrCreateAsync();
+            Assert.False(again.CreatedThisLaunch);
+            Assert.Equal("kept-installation", again.InstallationId);
+        }
+
+        [Fact]
+        public async Task A_reset_while_the_old_registration_writes_the_step_up_marker_waits_for_the_write_and_the_marker_never_outlives_it()
+        {
+            var store = new HeldMarkerStore(new InMemorySecureStorage());
+            var trust = DeviceTrust.Over(
+                new Backend(),
+                stepUp: new StepUpOptions(),
+                store: store,
+                collector: new Collector(),
+                hintReader: new NoHint(),
+                stepUpKey: new StepUpKeystore());
+            var old = Assert.ThrowsAsync<InterruptedCallException>(() => trust.StartAsync());
+            await store.Reached.Task;
+            var reset = false;
+            var resetting = trust.ResetAsync().ContinueWith(_ => reset = true, TaskScheduler.Default);
+            await Task.Delay(50);
+            Assert.False(reset, "the reset waits for the write in flight");
+            store.GoOn.SetResult(true);
+            await resetting;
+            await old;
+            Assert.False(await store.StepUpReenrolPendingAsync());
+        }
+
+        [Fact]
+        public async Task A_reset_while_a_request_is_signed_the_proof_is_never_handed_out()
+        {
+            var key = new HeldSigningKeystore();
+            var trust = DeviceTrust.Over(new Backend(), store: new InstallationStore(key, new InMemorySecureStorage()), collector: new Collector(), hintReader: new NoHint());
+            await trust.StartAsync();
+            key.Hold = true;
+            var signing = Assert.ThrowsAsync<InterruptedCallException>(() => trust.SignRequestAsync("POST", "/v1/pay", "session"));
+            await key.Reached.Task;
+            await trust.ResetAsync();
+            key.GoOn.SetResult(true);
+            await signing;
+        }
+
+        [Fact]
+        public async Task A_step_up_key_the_keystore_will_not_delete_fails_the_reset_the_installation_gone_all_the_same_none_to_delete_fails_nothing()
+        {
+            var storage = new InMemorySecureStorage();
+            var trust = DeviceTrust.Over(
+                new Backend(),
+                stepUp: new StepUpOptions(),
+                store: new InstallationStore(new Keystore(holds: false), storage),
+                collector: new Collector(),
+                hintReader: new NoHint(),
+                stepUpKey: new StepUpKeystore(makes: true, deleteFails: "KEY_DELETE_FAILED"));
+            await trust.StartAsync();
+            var refused = await Assert.ThrowsAsync<NativeKeyException>(() => trust.ResetAsync());
+            Assert.Equal("KEY_DELETE_FAILED", refused.Code);
+            Assert.Null(trust.Identity);
+            Assert.Null(await StoredId(storage));
+            var plain = DeviceTrust.Over(
+                new Backend(),
+                stepUp: new StepUpOptions(),
+                store: new InstallationStore(new Keystore(holds: false), new InMemorySecureStorage()),
+                collector: new Collector(),
+                hintReader: new NoHint(),
+                stepUpKey: new StepUpKeystore(deleteFails: "NATIVE_STEPUP_PLUGIN_MISSING"));
+            await plain.StartAsync();
+            await plain.ResetAsync();
+        }
+
+        [Fact]
         public async Task A_reset_while_a_scan_collects_its_report_is_never_sent()
         {
             var backend = new Backend();
@@ -263,6 +348,109 @@ namespace Necessary.Tests
                 Holds = false;
                 return Task.CompletedTask;
             }
+        }
+
+        /// <summary>A keystore that holds the key but cannot be reached at first: the Android side then answers KEY_UNAVAILABLE and makes no key.</summary>
+        private sealed class UnreachableKeystore : INativeInstallationKey
+        {
+            private readonly Keystore inner = new Keystore(holds: true);
+
+            public bool Reachable { get; set; }
+
+            public bool Holds => inner.Holds;
+
+            public Task<NativeKeyMetadata> GetOrCreateKeyAsync() =>
+                Reachable
+                    ? inner.GetOrCreateKeyAsync()
+                    : Task.FromException<NativeKeyMetadata>(new NativeKeyException(
+                        "KEY_UNAVAILABLE",
+                        "AndroidKeyStore could not be reached for the installation key; the key was kept, never replaced."));
+
+            public Task<string> SignPayloadAsync(string payloadBase64Url) => inner.SignPayloadAsync(payloadBase64Url);
+
+            public Task DeleteKeyAsync() => inner.DeleteKeyAsync();
+        }
+
+        /// <summary>A keystore whose signatures wait, once <see cref="Hold"/> is set, until <see cref="GoOn"/>.</summary>
+        private sealed class HeldSigningKeystore : INativeInstallationKey
+        {
+            private readonly Keystore inner = new Keystore(holds: false);
+
+            public bool Hold { get; set; }
+
+            public TaskCompletionSource<bool> Reached { get; } = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public TaskCompletionSource<bool> GoOn { get; } = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public Task<NativeKeyMetadata> GetOrCreateKeyAsync() => inner.GetOrCreateKeyAsync();
+
+            public async Task<string> SignPayloadAsync(string payloadBase64Url)
+            {
+                if (Hold)
+                {
+                    Reached.TrySetResult(true);
+                    await GoOn.Task;
+                }
+
+                return await inner.SignPayloadAsync(payloadBase64Url);
+            }
+
+            public Task DeleteKeyAsync() => inner.DeleteKeyAsync();
+        }
+
+        /// <summary>A store whose first step-up marker write waits until <see cref="GoOn"/>.</summary>
+        private sealed class HeldMarkerStore : InstallationStore
+        {
+            public HeldMarkerStore(ISecureStorage storage)
+                : base(new Keystore(holds: false), storage)
+            {
+            }
+
+            public TaskCompletionSource<bool> Reached { get; } = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public TaskCompletionSource<bool> GoOn { get; } = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public override async Task SetStepUpReenrolPendingAsync(bool pending)
+            {
+                if (Reached.TrySetResult(true))
+                {
+                    await GoOn.Task;
+                }
+
+                await base.SetStepUpReenrolPendingAsync(pending);
+            }
+        }
+
+        /// <summary>A phone that makes no step-up key; or, given a code, one whose key the keystore will not delete.</summary>
+        private sealed class StepUpKeystore : INativeStepUpKey
+        {
+            private readonly bool makes;
+            private readonly string? deleteFails;
+
+            public StepUpKeystore(bool makes = false, string? deleteFails = null)
+            {
+                this.makes = makes;
+                this.deleteFails = deleteFails;
+            }
+
+            public string ConfiguredMode { get; set; } = "per_use";
+
+            public Task<StepUpKeyMetadata> GetOrCreateKeyAsync(string factor, string mode, int windowSeconds) =>
+                makes
+                    ? Task.FromResult(new StepUpKeyMetadata(
+                        Obj("{\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"x\":\"sx\",\"y\":\"sy\"}"),
+                        factor,
+                        mode,
+                        windowSeconds,
+                        "trusted_execution_environment",
+                        true,
+                        true))
+                    : Task.FromException<StepUpKeyMetadata>(new NativeKeyException("STEPUP_UNAVAILABLE", "no screen lock"));
+
+            public Task<string> SignAsync(string payloadBase64Url, string reason) => Task.FromResult("approved");
+
+            public Task DeleteKeyAsync() =>
+                deleteFails is null ? Task.CompletedTask : Task.FromException(new NativeKeyException(deleteFails, "the keystore refused"));
         }
 
         /// <summary>Answers as the guide says; counts what it was asked.</summary>

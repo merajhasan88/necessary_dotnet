@@ -155,6 +155,10 @@ namespace Necessary
         private Task? resetting;
         private Task? saving;
         private Task? reenrolling;
+
+        // The persistent writes and key changes running now (Mutate): a reset
+        // waits for each before it deletes, so none outlives the deletion.
+        private readonly HashSet<Task> mutations = new HashSet<Task>();
         private ReinstallHint? hint;
         private bool hintRead;
 
@@ -404,7 +408,15 @@ namespace Necessary
             {
                 var options = AppPin ?? throw new InvalidOperationException(
                     "The app PIN is off: new DeviceTrust(..., appPin: new AppPinOptions()).");
-                return await Client.SetAppPinAsync(session, await LoadIdentity(), pin, given, options.Path);
+                var callGeneration = Volatile.Read(ref generation);
+                var installation = await LoadIdentity();
+                Current(callGeneration);
+                var answer = await Client.SetAppPinAsync(session, installation, pin, given, options.Path);
+
+                // Reset, or closed, meanwhile: the answer is of an installation that
+                // is gone, and is never handed out.
+                Current(callGeneration);
+                return answer;
             });
         }
 
@@ -494,6 +506,42 @@ namespace Necessary
                     "The installation was reset, or the client closed, while this call ran: nothing it found was kept.");
             }
         }
+
+        /// <summary>
+        /// A persistent write or a key change for the installation
+        /// <paramref name="callGeneration"/>: refused before it starts when a reset
+        /// or a close has ended that installation, and waited for by a reset that
+        /// began while it ran. The order is the whole guarantee: a reset moves the
+        /// generation on, on this object's scheduler, before anything else runs
+        /// there, so a write asked for after that throws here without writing; one
+        /// asked for before is in the set the reset waits for before it deletes.
+        /// </summary>
+        private Task<T> Mutate<T>(int callGeneration, Func<Task<T>> change)
+        {
+            Current(callGeneration);
+            var running = change();
+            Track(running);
+            return running;
+        }
+
+        private Task Mutate(int callGeneration, Func<Task> change)
+        {
+            Current(callGeneration);
+            var running = change();
+            Track(running);
+            return running;
+        }
+
+        private void Track(Task running)
+        {
+            var tracked = Swallow(running);
+            mutations.Add(tracked);
+            _ = tracked.ContinueWith(_ => mutations.Remove(tracked), CancellationToken.None, TaskContinuationOptions.None, Loop);
+        }
+
+        /// <summary>A step-up key a re-enrolment replaces: one that can never sign again, or one the keystore cannot vouch for.</summary>
+        private static bool ReplaceableKey(NativeKeyException error) =>
+            error.Code == "STEPUP_KEY_INVALIDATED" || error.Code == "STEPUP_KEY_UNAVAILABLE";
 
         /// <summary>Moves on to the next installation: the calls running now keep nothing, and the next ones start afresh.</summary>
         private void EndCalls()
@@ -638,11 +686,12 @@ namespace Necessary
             var save = saving;
             var reenrol = reenrolling;
             var earlier = resetting;
+            var changing = mutations.ToList();
             EndCalls();
             offeredStepUpKey = null;
             hint = null;
             hintRead = false;
-            var deleting = Delete(earlier, load, save, reenrol);
+            var deleting = Delete(earlier, load, save, reenrol, changing);
 
             // Later loads wait for the deletion, whatever came of it; the caller
             // of reset hears what did.
@@ -650,7 +699,7 @@ namespace Necessary
             return deleting;
         }
 
-        private async Task Delete(Task? earlier, Task? load, Task? save, Task? reenrol)
+        private async Task Delete(Task? earlier, Task? load, Task? save, Task? reenrol, IReadOnlyList<Task> changing)
         {
             if (earlier is not null)
             {
@@ -660,8 +709,9 @@ namespace Necessary
             // A load or a save still running finishes first, so that nothing it
             // writes outlives the deletion. So does a re-enrolment: its key,
             // which a backend may already have taken, is deleted after it, and the
-            // marker it writes is cleared.
-            var waits = new List<Task>();
+            // marker it writes is cleared. So does every write and key change still
+            // running (Mutate): the step-up marker, a step-up key being made.
+            var waits = new List<Task>(changing);
             if (load is not null)
             {
                 waits.Add(Swallow(load));
@@ -681,15 +731,24 @@ namespace Necessary
             await store.ClearAsync();
 
             // The step-up key goes with the installation, as on a reinstall: kept,
-            // it would link the next installation to this one.
+            // it would link the next installation to this one. None to delete is no
+            // failure; nor is a phone or a platform with no step-up key at all. A
+            // key that stays is: the reset fails with it, the installation itself
+            // gone, so the app knows and may reset again.
             try
             {
                 await stepUpKey.DeleteKeyAsync();
             }
-#pragma warning disable CA1031 // Best effort: none to delete, none this phone can make, or no native side at all.
-            catch (Exception)
-#pragma warning restore CA1031
+            catch (NativeKeyException error) when (error.Code != "NATIVE_STEPUP_PLUGIN_MISSING" && error.Code != "UNSUPPORTED_ANDROID_VERSION")
             {
+                throw new NativeKeyException(
+                    error.Code,
+                    "The installation was reset, but its step-up key could not be deleted: " + error.Message + " Call ResetAsync() again.",
+                    error);
+            }
+            catch (NativeKeyException)
+            {
+                // No step-up key on this phone or platform: nothing to delete.
             }
         }
 
@@ -750,11 +809,11 @@ namespace Necessary
             var bound = offered is null ? null : matches ?? registered;
             if (offered is null || bound == false)
             {
-                await store.SetStepUpReenrolPendingAsync(true);
+                await Mutate(callGeneration, () => store.SetStepUpReenrolPendingAsync(true));
             }
             else if (bound == true)
             {
-                await store.SetStepUpReenrolPendingAsync(false);
+                await Mutate(callGeneration, () => store.SetStepUpReenrolPendingAsync(false));
             }
 
             var pending = offered is not null && bound != true && await store.StepUpReenrolPendingAsync();
@@ -786,7 +845,7 @@ namespace Necessary
             NativeKeyException? unavailable = null;
             try
             {
-                key = await stepUpKey.GetOrCreateKeyAsync(options.Factor, options.Mode, options.WindowSeconds);
+                key = await Mutate(callGeneration, () => stepUpKey.GetOrCreateKeyAsync(options.Factor, options.Mode, options.WindowSeconds));
             }
             catch (NativeKeyException error)
             {
@@ -897,7 +956,9 @@ namespace Necessary
             string? appPin,
             string? reportId)
         {
+            var callGeneration = Volatile.Read(ref generation);
             var installation = await LoadIdentity();
+            Current(callGeneration);
             StepUpApproval? approval = null;
             if (withStepUp)
             {
@@ -917,11 +978,17 @@ namespace Necessary
             }
 
             var proof = await RequestProofs.SignAsync(installation, method, path, bearer, body, approval);
+
+            // The installation reset, or the client closed, while the phone
+            // signed: the proof is of an installation that is gone, and is never
+            // handed out.
+            Current(callGeneration);
             if (appPin is not null)
             {
                 var options = AppPin ?? throw new InvalidOperationException(
                     "The app PIN is off: new DeviceTrust(..., appPin: new AppPinOptions()).");
                 proof = await Client.ProveAppPinAsync(bearer, installation, appPin, proof, options.ProofPath);
+                Current(callGeneration);
             }
 
             return reportId is null ? proof : proof.WithIntegrityReport(reportId);
@@ -943,18 +1010,29 @@ namespace Necessary
                 {
                     // From here the phone's key and the backend's differ until the
                     // backend takes the new one: approvals wait for that.
-                    Current(callGeneration);
-                    await store.SetStepUpReenrolPendingAsync(true);
+                    await Mutate(callGeneration, () => store.SetStepUpReenrolPendingAsync(true));
                     Current(callGeneration);
                     offeredStepUpKey = null;
                     stepUpUnavailable = ReenrolPending();
-                    await stepUpKey.DeleteKeyAsync();
+                    await Mutate(callGeneration, () => stepUpKey.DeleteKeyAsync());
                 }
 
-                return await stepUpKey.GetOrCreateKeyAsync(options.Factor, options.Mode, options.WindowSeconds);
+                return await Mutate(callGeneration, () => stepUpKey.GetOrCreateKeyAsync(options.Factor, options.Mode, options.WindowSeconds));
             }
 
-            var key = await NewKey(replace: false);
+            // A re-enrolment is the explicit recovery: a key the keystore cannot
+            // vouch for (STEPUP_KEY_UNAVAILABLE), or one that can never sign again,
+            // is replaced here -- and only here.
+            StepUpKeyMetadata key;
+            try
+            {
+                key = await NewKey(replace: false);
+            }
+            catch (NativeKeyException error) when (ReplaceableKey(error))
+            {
+                key = await NewKey(replace: true);
+            }
+
             if (!key.Created && !options.Accepts(key))
             {
                 key = await NewKey(replace: true);
@@ -984,7 +1062,7 @@ namespace Necessary
             {
                 keyProof = await ProveWith(key);
             }
-            catch (NativeKeyException error) when (error.Code == "STEPUP_KEY_INVALIDATED" || error.Code == "STEPUP_KEY_NOT_FOUND")
+            catch (NativeKeyException error) when (ReplaceableKey(error) || error.Code == "STEPUP_KEY_NOT_FOUND")
             {
                 // A key that died with the screen lock is found only when it signs.
                 key = await NewKey(replace: true);
@@ -1012,8 +1090,7 @@ namespace Necessary
                 DartJson.Encode(body),
                 nonce: nonce);
             var answer = await Client.SendSignedAsync(proof);
-            Current(callGeneration);
-            await store.SetStepUpReenrolPendingAsync(false);
+            await Mutate(callGeneration, () => store.SetStepUpReenrolPendingAsync(false));
             Current(callGeneration);
             offeredStepUpKey = key;
             stepUpUnavailable = null;

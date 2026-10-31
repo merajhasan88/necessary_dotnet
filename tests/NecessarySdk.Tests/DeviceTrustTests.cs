@@ -148,6 +148,21 @@ namespace Necessary.Tests
         }
 
         [Fact]
+        public async Task A_step_up_key_the_keystore_cannot_vouch_for_is_kept_at_start_and_replaced_only_by_a_reenrolment()
+        {
+            var backend = new Backend();
+            var key = new UnavailableStepUpKey();
+            var trust = Trust(backend, stepUpKey: key, stepUp: new StepUpOptions());
+            await trust.StartAsync();
+            Assert.Equal("STEPUP_KEY_UNAVAILABLE", trust.StepUpUnavailable?.Code);
+            Assert.Equal(0, key.Deleted);
+            var answer = await trust.ReenrolStepUpAsync("account-session", Obj("{\"password\":\"pw\"}"));
+            Assert.True((bool)answer["stepup_key_registered"]!);
+            Assert.Equal(1, key.Deleted);
+            Assert.Null(trust.StepUpUnavailable);
+        }
+
+        [Fact]
         public async Task Reenrolment_a_dead_step_up_key_replaced_its_proof_bound_to_the_request_proofs_nonce_and_approvals_from_then_on()
         {
             var backend = new Backend();
@@ -813,6 +828,30 @@ namespace Necessary.Tests
                 }
 
                 return base.SignAsync(payloadBase64Url, reason);
+            }
+
+            public override Task DeleteKeyAsync()
+            {
+                Deleted += 1;
+                return Task.CompletedTask;
+            }
+        }
+
+        /// <summary>A key the keystore cannot vouch for (STEPUP_KEY_UNAVAILABLE) until it is replaced.</summary>
+        internal sealed class UnavailableStepUpKey : StepUpKeyFake
+        {
+            public int Deleted { get; private set; }
+
+            public override Task<StepUpKeyMetadata> GetOrCreateKeyAsync(string factor, string mode, int windowSeconds)
+            {
+                if (Deleted == 0)
+                {
+                    return Task.FromException<StepUpKeyMetadata>(new NativeKeyException(
+                        "STEPUP_KEY_UNAVAILABLE",
+                        "the keystore could not say whether the key is usable"));
+                }
+
+                return base.GetOrCreateKeyAsync(factor, mode, windowSeconds);
             }
 
             public override Task DeleteKeyAsync()

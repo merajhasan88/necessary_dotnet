@@ -14,7 +14,7 @@
     <Authors>Meraj Hasan</Authors>
     <Copyright>Copyright 2026 Meraj Hasan</Copyright>
     <Product>necessary for .NET</Product>
-    <Version>0.1.1</Version>
+    <Version>0.1.5</Version>
     <NoWarn>$(NoWarn);CA1848</NoWarn>
     <!-- On a CI machine every path the compiler records is /_/..., so the
          package carries none of the build machine's folders. -->

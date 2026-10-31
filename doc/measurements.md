@@ -1,31 +1,33 @@
-# Measurements — what the plugin measures on the phone
+# Measurements — what the SDKs measure on the phone
 
-Every measurement the necessary plugin can put in a signed report, field by field: what it is, how the
-plugin measures it, and what a complete answer holds. The plugin never sends a score or a verdict;
+Every measurement a Necessary SDK can put in a signed report, field by field: what it is, how the
+SDK measures it, and what a complete answer holds. Every SDK sends the same report, whatever framework
+your app is built with, and none sends a score or a verdict;
 what a measurement means for a request is your backend's decision. The integration guide
 (`integration_guide.md`, beside this file) is the protocol — how your backend asks for a scan and checks
 the report — and its section 7 is about deciding with these measurements.
 
 ## The contract
 
-The plugin follows the measurement contract published in `contract/report-1/android-8-ios-5/`: the
+Every SDK follows the measurement contract published in `contract/report-1/android-8-ios-5/`: the
 report's schema (`report.schema.json`), the rules a schema cannot state (`RULES.md`), and sample reports
 judged each way (`samples/`). The folder's name is two versions:
 
 - `report-1` is the report's format, version 1 — `version` in every report;
 - `android-8-ios-5` names the lowest versions of the measuring code, the collector, that the contract
-  accepts: 8 on Android and 5 on iOS — `collector_version` in every report. This plugin's collectors are
-  at version 8 on Android and 6 on iOS. These are not Android or iOS versions: the plugin runs on
-  Android 7.0 and later, and on iOS 15 and later.
+  accepts: 8 on Android and 5 on iOS — `collector_version` in every report. These are not Android or iOS versions; your
+  SDK's README says which collector versions it sends and which Android and iOS versions it runs on.
 
-This file describes that contract as this plugin sends it: each heading below is one of its
+This file describes that contract as the SDKs send it: each heading below is one of its
 measurements — a probe — and each row of a table one of its fields.
 
 ## Reading a measurement
 
-- **Every probe has a `status`**: `ok`; `error`, with `error` saying why (on Android also `error_type`);
-  `unsupported`, with `reason`; or `not_enabled`, a personal measurement your app does not collect.
-- **`ok` is a claim, not a measurement.** A probe is complete when it answered `ok` and carries every
+- **Every probe has a `status`**: `ok`, measured; `error`, with `error` saying why (on Android also
+  `error_type`); `unsupported`, with `reason`; or `not_enabled`, a personal measurement your app does
+  not collect. **`ok` means measured, never "all clear"**: the phone took the measurement, and what it
+  found is in the fields — the example app shows it as *measured*.
+- **`ok` says measured; the fields say how much.** A probe is complete when it answered `ok` and carries every
   field marked *yes* below — for `code_integrity` with `checked` true, every field marked *when checked*
   as well, and for a list of apps `truncated` present and false (*yes, false*).
 - **`unread`** names the parts of an `ok` probe that could not be read, each with why:
@@ -46,12 +48,12 @@ Each probe says when it comes:
 - **every scan**, whether or not your backend asks. Rely on one only by asking for it: until you do, its
   absence or failure does not make a report incomplete;
 - **a personal measurement**, only when your backend lists it in `optional_probes` and your app enables
-  it in the plugin (`personalMeasurements`) — the location only with the person's permission as well.
+  it in its SDK (the SDK's README says how) — the location only with the person's permission as well.
   These identify a person's phone, network or habits (integration guide, section 8).
 
 The columns: *Type* — `true/false`, an integer or a number with its unit, text, a list or a map;
 *Needed* — *yes*, a complete answer carries it; *when checked*, needed when `checked` is true; *yes,
-false*, present and false; empty, sent when the plugin has it.
+false*, present and false; empty, sent when the SDK has it.
 
 ## Apps in a list
 
@@ -135,7 +137,7 @@ is not allowed to see reads as absent; a check that failed is in `unread`, by it
 
 ### `root_shell`
 
-Whether `su` resolves from the app's own shell (`command -v su`). A lookup that could not run, or did
+Whether `su` resolves from the app's own shell (`command -v su`, then `which su`). A lookup that could not run, or did
 not finish, answers `error`: never "no su".
 
 **When:** your backend asks for it.
@@ -259,11 +261,24 @@ The app's native code, and the system libraries it uses, compared in memory with
 that patches code in memory changes bytes there, whatever the tool is called. Three regions: `core` —
 the C library and the Android runtime (`libc.so`, `libart.so`); `ext` — other system libraries that
 hooks aim at (`libc++.so`, `libssl.so`, `libcrypto.so`, `libandroid_runtime.so`, `libbinder.so`); `app`
-— the app's own native code (the Flutter engine and the app's compiled Dart, inside or beside its APK).
+— the app's own native code: what is mapped from the APKs the app was installed from (its base APK and
+its split APKs, by their exact paths — never another package's APK the app has loaded code from, such
+as the WebView's), and the libraries the SDK names wherever they are (the Flutter SDK: the Flutter
+engine, `libflutter.so`, and the compiled Dart, `libapp.so`). That is a selection, and it depends on
+how the app is packaged: a build that keeps its native libraries in its APKs (the default) has all of
+them measured; one that extracts them leaves those under other names — another plugin's, say — outside
+`app`. The report says what it leaves out: every executable file of the app's own that is mapped but
+not in `app` — an extracted library, the app's Java and Kotlin compiled by Android — is counted in
+`app_outside_count` and named in `app_outside_files`. Code compiled as the app runs has no file to be
+compared with, and is in neither.
 In each region expected = compared + skipped + unreadable, and `<region>_complete` is true exactly when
 some code was expected and all of it was compared. Any differing byte is code changed while the app
 runs, which should never happen. Memory that Android 10 and later maps execute-only is made readable for
-the copy and restored. `checked` false: the comparison did not run, and `reason` says why.
+the copy and restored. The memory map is read once, whole, and every region taken from that one
+snapshot: complete means every target mapping in the snapshot compared. One comparison runs at a time
+in the app's process. `checked` false: the comparison did not run, and `reason` says why —
+`maps_unreadable` or `maps_empty` when the memory map could not be read, `no_target_mapped` when it
+names no target; every region is then incomplete.
 
 **When:** your backend asks for it.
 
@@ -287,7 +302,7 @@ the copy and restored. `checked` false: the comparison did not run, and `reason`
 | `app_unreadable_bytes` | integer, bytes |  | `app` bytes that could not be read |
 | `core_complete` | true/false |  | every `core` byte expected was compared |
 | `ext_complete` | true/false |  | every `ext` byte expected was compared |
-| `app_complete` | true/false |  | every `app` byte expected was compared |
+| `app_complete` | true/false |  | every `app` byte expected was compared: complete over the selected mappings of the snapshot, not over all of the app's code |
 | `core_diff_bytes` | integer, bytes |  | `core` bytes that differ |
 | `ext_libs_diff` | integer, count |  | `ext` libraries with a difference |
 | `app_libs_diff` | integer, count |  | `app` files with a difference |
@@ -295,6 +310,8 @@ the copy and restored. `checked` false: the comparison did not run, and `reason`
 | `protect_restore_failures` | integer, count |  | execute-only memory whose protection could not be put back after the copy |
 | `xom_regions_unlocked` | integer, count |  | execute-only regions made readable for the comparison |
 | `xom_regions_unreadable` | integer, count |  | execute-only regions that could not be made readable: their bytes count as unreadable |
+| `app_outside_count` | integer, count |  | executable files of the app's own (in its install or data directories) mapped but not in `app`, so not compared (collector 10) |
+| `app_outside_files` | list |  | their file names, sorted, at most 32 (collector 10) |
 | `elapsed_ms` | integer, milliseconds |  | how long the comparison took |
 
 ### `developer_settings`
@@ -352,8 +369,10 @@ memory page size.
 
 Whether a VPN is up and an HTTP proxy is set, as Android's connectivity service says: every network is
 asked, not only the default one, since a VPN is a network of its own. Interface names only, never an
-address. Flutter's own requests do not use the system proxy, so the proxy says how the phone is set, not
-which way the report came.
+address. The proxy says how the phone is set, not which way the report came: whether an app's own
+requests follow it depends on how the app makes them (a Flutter app's do not). A listing of the
+interfaces that failed, whole or for one interface, is in `unread` as `interfaces`: the list is then
+not all of them.
 
 **When:** every scan, whether or not your backend asks.
 
@@ -374,6 +393,7 @@ link-local address can carry the hardware address, which Android hides from apps
 | Field | Type | Needed | Meaning |
 |---|---|---|---|
 | `addresses` | list | yes | each an `interface` (its name) and an `address` (IPv4 or IPv6), at most 32 |
+| `truncated` | true/false |  | the phone had more than the 32 addresses a list holds (Android collector 10, iOS collector 8) |
 
 ### `accessibility`
 
@@ -405,7 +425,7 @@ Every app allowed to read the phone's notifications — one-time codes among the
 ### `other_access`
 
 The device-administrator apps that are active, and which of four known remote-control apps are
-installed: AnyDesk, TeamViewer QuickSupport, RustDesk and AirDroid — a list compiled into the plugin,
+installed: AnyDesk, TeamViewer QuickSupport, RustDesk and AirDroid — a list compiled into the SDK,
 which Android lets an app check without seeing other apps.
 
 **When:** your backend asks for it and your app enables it — a personal measurement.
@@ -421,7 +441,7 @@ which Android lets an app check without seeing other apps.
 Whether the app's window is being recorded (Android 15 and later), and how many displays besides the
 phone's own are on: casting, mirroring or an external screen, which it cannot tell apart. A display that
 is off, or private to another app, is not counted. Recording needs `DETECT_SCREEN_RECORDING`, a
-permission the plugin declares for your app; when it cannot be measured it is left out — unknown, not
+permission the SDK declares for your app; when it cannot be measured it is left out — unknown, not
 "no".
 
 **When:** your backend asks for it and your app enables it — a personal measurement.
@@ -436,7 +456,7 @@ permission the plugin declares for your app; when it cannot be measured it is le
 
 The last location the phone already knows — never a fresh fix, never a prompt: the newest fix any
 enabled provider holds, read once per scan, so that both location answers describe the same fix.
-Coordinates come only with the location permission, which your app asks for itself (README). With the
+Coordinates come only with the location permission, which your app asks for itself (your SDK's README says how). With the
 permission and no coordinates the phone holds no location — unless a provider could not be read: it is
 then in `unread`, by its name, and the location may be there.
 
@@ -522,7 +542,8 @@ A debugger tracing the app's process: the kernel's `P_TRACED` flag.
 ### `jailbreak_files`
 
 Whether 20 known jailbreak paths exist: the package managers (Cydia, Sileo, Zebra), Substrate and
-ElleKit, a shell and SSH, apt's folders, and the rootless `/var/jb` layout of current jailbreaks. A
+ElleKit, a shell and SSH, apt's and Cydia's folders, `/private/var/stash`, the marker files of the
+Electra, Taurine and unc0ver jailbreaks, and the rootless `/var/jb` layout of current jailbreaks. A
 clean phone's sandbox hides most of them, so a path the app cannot see reads as absent. On the
 Simulator, whose files are the Mac's, it answers `unsupported`.
 
@@ -550,7 +571,8 @@ was written is removed at once.
 Instrumentation and jailbreak names among the libraries loaded into the app: Frida and its Gadget,
 Objection, Cynject, Cycript, Substrate and MobileSubstrate, Substitute, libhooker, ElleKit, Cydia,
 Shadow, FLEX and libSparkAppList. It matches names, so a renamed library escapes it; `code_integrity`
-compares the code itself.
+compares the code itself. A library whose name the loader did not give (one unloading as the list is
+read) is in `unread` as `image_names`, since it could be one of those.
 
 **When:** your backend asks for it.
 
@@ -589,9 +611,16 @@ the app — the main executable and its frameworks — has its `__text` compared
 libraries in a shared cache that no app can read, so only the app's own code can be compared: the system
 figures are always 0 — not measured, never clean — and `system_images_unreadable` counts those
 libraries. Each app image is compared, unreadable (its file could not be read in full) or skipped (no
-usable `__text`, a `__TEXT` over 64 MiB, no live address); images and bytes both add up, expected =
-compared + unreadable + skipped. `app_complete` is true exactly when every image was compared, the main
-executable among them. It comes with every scan; ask for it too, since a report that lacks it is refused
+usable `__text`, a `__TEXT` over 64 MiB, no live address, or code encrypted on disk); images and bytes
+both add up, expected = compared + unreadable + skipped. An app installed from the App Store has its
+code encrypted in its files and decrypted only in memory, so the two differ in every encrypted byte of a
+genuine app: such an image is skipped and named in `app_images_not_compared`, never compared — a
+development, ad hoc or enterprise build is stored in the clear and is compared. A framework stored as a
+universal file is compared through its arm64 image. An image whose file is another build than the one
+running — an app updated while it ran — is skipped and named, never compared: the old code in memory and
+the new file would differ in bytes nobody changed. An image the loader counts but gives no name for
+counts as one not read. `app_complete` is true exactly when every image was compared, the main executable
+among them. It comes with every scan; ask for it too, since a report that lacks it is refused
 only when you asked for it.
 
 **When:** every scan, whether or not your backend asks.
@@ -643,8 +672,8 @@ apart.
 
 Whether a VPN or an HTTP proxy is in use. iOS gives apps no way to ask about a VPN, so a VPN is inferred
 from the network interfaces the system proxy settings are scoped to (`utun`, `ipsec`, `ppp`, `tun`,
-`tap`): a heuristic, so the names come with it. The proxy is read from the system proxy settings.
-Flutter's own requests do not use the system proxy.
+`tap`): a heuristic, so the names come with it. The proxy is read from the system proxy settings;
+whether an app's own requests follow it depends on how the app makes them (a Flutter app's do not).
 
 **When:** every scan, whether or not your backend asks.
 
@@ -664,6 +693,7 @@ addresses are left out.
 | Field | Type | Needed | Meaning |
 |---|---|---|---|
 | `addresses` | list | yes | each an `interface` (its name) and an `address` (IPv4 or IPv6), at most 32 |
+| `truncated` | true/false |  | the phone had more than the 32 addresses a list holds (Android collector 10, iOS collector 8) |
 
 ### `screen_capture`
 
@@ -679,13 +709,13 @@ background, or before its first window — recording is not measured: it is left
 |---|---|---|---|
 | `recording` | true/false | yes | the screen showing the app is being captured |
 | `external_displays` | integer, count | yes | other screens attached |
-| `recording_status` | one of `unsupported`, `no_permission`, `unavailable` |  | why `recording` is absent: `unavailable`, no window of the app's in the foreground to ask. iOS measures recording on every version the plugin runs on, so `unsupported` never comes from iOS |
+| `recording_status` | one of `unsupported`, `no_permission`, `unavailable` |  | why `recording` is absent: `unavailable`, no window of the app's in the foreground to ask. iOS has measured recording since iOS 11, so `unsupported` never comes from iOS |
 
 ### `location`
 
 The last location the phone already holds — never a fresh fix, never a prompt — read once per scan, so
 that both location answers describe the same fix. Coordinates come only with the location permission,
-which your app asks for itself (README).
+which your app asks for itself (your SDK's README says how).
 
 **When:** your backend asks for it and your app enables it — a personal measurement.
 
@@ -739,5 +769,5 @@ enables it, and `not_enabled` when it does not. No fields.
 
 A fully compromised phone can report anything, and a modified app that holds a registered key signs
 whatever it is given: the signature proves which installation sent a report, not that the phone is
-honest or that the plugin measured what it reports (integration guide, section 9). The measurements raise
+honest or that the SDK measured what it reports (integration guide, section 9). The measurements raise
 the cost of fraud; your backend weighs them with its own business logic.

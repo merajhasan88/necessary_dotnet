@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.1.5
+
+The .NET translation of the Flutter plugin `necessary` 0.1.5 (necessary_flutter `07e94e7`), which
+answers a release review of this package and carries the same fixes; the wire is unchanged — every
+message, header and signed payload, the shared vectors and the contract's fields.
+
+- Android (collector 10): the code comparison reads the memory map once, whole, and takes every region
+  from that one snapshot; a map that cannot be read answers `checked` false with `reason`
+  `maps_unreadable` (or `maps_empty`, `no_target_mapped`), never a region read as complete. One
+  comparison runs at a time in the process, whichever `DeviceTrust` or thread asks: a comparison makes
+  execute-only pages readable while it reads them. (Review items 1 and 2.)
+- Android: the `app` region is the app's own — its APKs by their exact paths and the .NET runtime's
+  libraries by name — where it took every mapping ending in `.apk`; the app's own executable files
+  mapped outside it, an extracted ahead-of-time assembly (`libaot-*.dll.so`) among them, are counted in
+  `app_outside_count` and named in `app_outside_files`. (Review item 5.)
+- Android: the step-up key is deleted only when Android says it can never sign again
+  (`KeyPermanentlyInvalidatedException`); a lookup that cannot establish whether it is usable keeps it
+  and answers the new `STEPUP_KEY_UNAVAILABLE`, which an app may retry, and `ReenrolStepUpAsync`
+  replaces such a key. (Review item 4.)
+- Android: a key is made only where the keystore, answering, holds none: `containsAlias` also answers
+  "no" when the keystore cannot be reached, and a new key used to be generated over the old one. Now
+  `StartAsync()` fails with the new `KEY_UNAVAILABLE` and makes nothing; signing answers `KEY_NOT_FOUND`
+  only when the keystore says so; deleting a key deletes whatever a lookup said, and fails with
+  `KEY_DELETE_FAILED` when it stays. Making and deleting a key run one at a time in the process, on
+  Android and on iOS.
+- Android: every failure says what failed beneath it — a `NativeKeyException`'s message ends with
+  `[cause: …]`, down to the keystore's own answer, with its numeric code from Android 13; a probe's
+  `error` and each `unread` reason carry the same, within the contract's lengths; a listing of the
+  network interfaces that failed is in `unread`; an Accessibility service the system did not describe
+  is counted in `unread`. A step-up approval waiting for the passcode screen ends as `STEPUP_CANCELLED`
+  when the activity that asked is gone for good, never holding the next.
+- `ResetAsync()` and `Close()` hold for every call (review item 3): `SignRequestAsync` and
+  `SetAppPinAsync` end with `InterruptedCallException` when the installation was reset meanwhile,
+  handing out nothing; every persistent write and key change is refused once a reset has begun and
+  waited for when it began before. A step-up key that will not delete fails `ResetAsync()` with
+  `KEY_DELETE_FAILED`, the installation itself gone.
+- iOS (collector 8): an image the App Store encrypted on disk is skipped, never compared (collector
+  7, review item 6); an image is compared only with the build that is running (`LC_UUID`); a universal
+  framework file is compared through its arm64 image; an image dyld cannot name is counted, in
+  `code_integrity` and in `dyld_images`' `unread`.
+- Both platforms: `local_addresses` says `truncated` when the phone had more than 32 addresses.
+- The documents and the contract are the plugin's 0.1.5: the product is named Necessary, the category
+  device integrity; `ok` means measured, never "all clear"; the README says what the `app` region
+  covers and that .NET's memory figures are observations of the configurations tested.
+
 ## 0.1.1
 
 The .NET translation of the Flutter plugin `necessary` 0.1.1 (necessary_flutter `4a4c0e0`): the same

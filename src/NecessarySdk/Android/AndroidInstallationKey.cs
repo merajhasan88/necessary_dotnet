@@ -25,14 +25,24 @@ namespace Necessary
         private const string CurveName = "secp256r1";
         private const int MaxPayloadBytes = 65536;
 
+        // Making and deleting the key run one at a time in the process, whichever
+        // DeviceTrust asks: two first starts at once would otherwise each find no
+        // key, and the second would generate over the first's.
+        private static readonly object KeyLock = new object();
+
         private readonly Context context;
         private readonly string keyAlias;
+
+        // Never holds a key: deleting it says whether the keystore answers
+        // (KeyPresence).
+        private readonly string probeAlias;
 
         /// <summary>The installation key of the app <paramref name="context"/> belongs to.</summary>
         public AndroidInstallationKey(Context context)
         {
             this.context = context ?? throw new ArgumentNullException(nameof(context));
             keyAlias = context.PackageName + ".device_recognition.installation_key.v2";
+            probeAlias = keyAlias + ".probe";
         }
 
         /// <inheritdoc />
@@ -98,18 +108,35 @@ namespace Necessary
             }
             catch (GeneralSecurityException error)
             {
-                throw new NativeKeyException("KEYSTORE_UNAVAILABLE", "AndroidKeyStore is unavailable.", error);
+                throw AndroidNative.Failure("KEYSTORE_UNAVAILABLE", "AndroidKeyStore is unavailable.", error);
             }
         }
 
         private NativeKeyMetadata GetOrCreateKey()
         {
+            lock (KeyLock)
+            {
+                return LoadOrMakeKey();
+            }
+        }
+
+        private NativeKeyMetadata LoadOrMakeKey()
+        {
             var keyStore = LoadKeyStore();
             var created = false;
-            if (!keyStore.ContainsAlias(keyAlias))
+
+            // A key is made only where the keystore, answering, holds none: a
+            // lookup that failed reads as "no key", and generating would replace
+            // the installation's key with a new one.
+            var (answer, cause) = Presence(keyStore);
+            switch (answer)
             {
-                GenerateKeyPair(keyStore);
-                created = true;
+                case KeyPresence.Answer.Absent:
+                    GenerateKeyPair(keyStore);
+                    created = true;
+                    break;
+                case KeyPresence.Answer.Unavailable:
+                    throw KeyUnavailable(cause);
             }
 
             var entry = PrivateKeyEntry(keyStore);
@@ -150,11 +177,17 @@ namespace Necessary
             }
 
             var keyStore = LoadKeyStore();
-            if (!keyStore.ContainsAlias(keyAlias))
+            var (answer, cause) = Presence(keyStore);
+            if (answer == KeyPresence.Answer.Absent)
             {
                 throw new NativeKeyException(
                     "KEY_NOT_FOUND",
                     "The Android installation key is missing. Restart the app to create a fresh installation identity.");
+            }
+
+            if (answer == KeyPresence.Answer.Unavailable)
+            {
+                throw KeyUnavailable(cause);
             }
 
             var entry = PrivateKeyEntry(keyStore);
@@ -169,28 +202,48 @@ namespace Necessary
             }
             catch (GeneralSecurityException error)
             {
-                throw new NativeKeyException("SIGNING_FAILED", "AndroidKeyStore could not sign the installation challenge.", error);
+                throw AndroidNative.Failure("SIGNING_FAILED", "AndroidKeyStore could not sign the installation challenge.", error);
             }
         }
 
+        /// <summary>
+        /// Deletes the key, whatever a lookup says: a lookup that failed reads as
+        /// "no key", and skipping the deletion then would leave the key in place
+        /// after a reset. Whether one was there is for the answer only.
+        /// </summary>
         private bool DeleteKey()
         {
-            var keyStore = LoadKeyStore();
-            try
+            lock (KeyLock)
             {
-                if (keyStore.ContainsAlias(keyAlias))
+                var keyStore = LoadKeyStore();
+                try
                 {
+                    var existed = keyStore.ContainsAlias(keyAlias);
                     keyStore.DeleteEntry(keyAlias);
-                    return true;
-                }
+                    if (keyStore.ContainsAlias(keyAlias))
+                    {
+                        throw new NativeKeyException(
+                            "KEY_DELETE_FAILED",
+                            "AndroidKeyStore did not delete the installation key: it is still present.");
+                    }
 
-                return false;
-            }
-            catch (GeneralSecurityException error)
-            {
-                throw new NativeKeyException("KEY_DELETE_FAILED", "AndroidKeyStore could not delete the installation key.", error);
+                    return existed;
+                }
+                catch (GeneralSecurityException error)
+                {
+                    throw AndroidNative.Failure("KEY_DELETE_FAILED", "AndroidKeyStore could not delete the installation key.", error);
+                }
             }
         }
+
+        private (KeyPresence.Answer Answer, Exception? Cause) Presence(KeyStore keyStore) =>
+            KeyPresence.Of(new Lookup(keyStore, keyAlias, probeAlias));
+
+        private static NativeKeyException KeyUnavailable(Exception? cause) => AndroidNative.Failure(
+            "KEY_UNAVAILABLE",
+            "AndroidKeyStore could not be reached for the installation key; the key was kept, never replaced. "
+            + "Try again; if this persists, ResetAsync() starts a new installation.",
+            cause);
 
         private void GenerateKeyPair(KeyStore keyStore)
         {
@@ -245,7 +298,7 @@ namespace Necessary
             }
             catch (Exception error) when (error is GeneralSecurityException || error is ProviderException)
             {
-                throw new NativeKeyException(
+                throw AndroidNative.Failure(
                     "KEY_GENERATION_FAILED",
                     preferStrongBox
                         ? "StrongBox could not create the P-256 installation key."
@@ -258,14 +311,23 @@ namespace Necessary
         {
             try
             {
-                return keyStore.GetEntry(keyAlias, null) as KeyStore.PrivateKeyEntry
+                // getEntry answers null when its own lookup fails (the keystore
+                // just reported the key), and an UnsupportedOperationException
+                // when the alias holds no key entry -- on Android 7 to 11 also when
+                // that lookup fails: both may pass, so the key is kept.
+                var entry = keyStore.GetEntry(keyAlias, null) ?? throw KeyUnavailable(null);
+                return entry as KeyStore.PrivateKeyEntry
                     ?? throw new NativeKeyException(
                         "KEY_NOT_FOUND",
-                        "The Android installation key entry is missing or has the wrong type.");
+                        "The Android installation key entry has the wrong type.");
+            }
+            catch (Java.Lang.UnsupportedOperationException error)
+            {
+                throw KeyUnavailable(error);
             }
             catch (GeneralSecurityException error)
             {
-                throw new NativeKeyException("KEY_LOOKUP_FAILED", "AndroidKeyStore could not load the installation key.", error);
+                throw AndroidNative.Failure("KEY_LOOKUP_FAILED", "AndroidKeyStore could not load the installation key.", error);
             }
         }
 
@@ -287,6 +349,25 @@ namespace Necessary
             {
                 return ("unknown", false);
             }
+        }
+
+        /// <summary>AndroidKeyStore as <see cref="KeyPresence"/> asks it, for one alias and its probe.</summary>
+        internal sealed class Lookup : KeyPresence.IKeystore
+        {
+            private readonly KeyStore keyStore;
+            private readonly string alias;
+            private readonly string probe;
+
+            public Lookup(KeyStore keyStore, string alias, string probe)
+            {
+                this.keyStore = keyStore;
+                this.alias = alias;
+                this.probe = probe;
+            }
+
+            public bool ContainsKey() => keyStore.ContainsAlias(alias);
+
+            public void DeleteProbe() => keyStore.DeleteEntry(probe);
         }
     }
 }

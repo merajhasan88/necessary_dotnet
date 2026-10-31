@@ -12,7 +12,7 @@ namespace Necessary.Example
         /// <summary>
         /// The backends to choose among, by name: the build's NecessaryBackends
         /// (<c>Name=https://…;Other=https://…</c>), or its one NecessaryBackendUrl
-        /// -- MSBuild properties, as the Flutter example's --dart-define values.
+        /// -- MSBuild properties.
         /// </summary>
         public static IReadOnlyList<KeyValuePair<string, string>> Backends { get; } = ReadBackends();
 

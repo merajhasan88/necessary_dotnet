@@ -14,7 +14,7 @@ namespace Necessary.Tests
     public class IosProbeReadsTests
     {
         private static readonly AppImage Main = Image("Runner", Compared(180_224), main: true);
-        private static readonly AppImage Flutter = Image("Frameworks/Flutter.framework/Flutter", Compared(4_194_304));
+        private static readonly AppImage Engine = Image("Frameworks/Engine.framework/Engine", Compared(4_194_304));
         private static readonly AppImage App = Image("Frameworks/App.framework/App", Compared(5_914_624));
         private static readonly DateTimeOffset Now = DateTimeOffset.FromUnixTimeSeconds(1_792_857_600);
         private static readonly Fix Real = new Fix(24.86, 67.0, 35, Now.AddSeconds(-10), false, false);
@@ -51,7 +51,7 @@ namespace Necessary.Tests
         [Fact]
         public void Every_image_compared_the_main_executable_among_them_is_complete()
         {
-            var r = AppCoverage(new[] { Main, Flutter, App }, 435);
+            var r = AppCoverage(new[] { Main, Engine, App }, 435);
             Assert.True(AddsUp(r));
             Assert.True(Bool(r, "app_complete") == true && Bool(r, "checked") == true);
             Assert.True(Bool(r, "main_executable_compared"));
@@ -96,7 +96,7 @@ namespace Necessary.Tests
                 Assert.Equal(new CoverageProblem("__text lies outside its __TEXT segment", 0), TextSpanOf(4096, 8192, 0, (offset, size)).Problem);
             }
 
-            var r = AppCoverage(new[] { Main, Flutter, Image("Frameworks/App.framework/App", ImageOutcome.Skipped(0, "no __text section in __TEXT")) }, 435);
+            var r = AppCoverage(new[] { Main, Engine, Image("Frameworks/App.framework/App", ImageOutcome.Skipped(0, "no __text section in __TEXT")) }, 435);
             Assert.True(AddsUp(r));
             Assert.False(Bool(r, "app_complete"));
             Assert.Equal(Int(r, "app_expected_bytes"), Int(r, "app_compared_bytes"));
@@ -134,8 +134,8 @@ namespace Necessary.Tests
         [Fact]
         public void A_differing_byte_is_counted_and_its_image_named()
         {
-            var r = AppCoverage(new[] { Main, Image("Frameworks/Flutter.framework/Flutter", Compared(4_194_304, differing: 16)) }, 435);
-            Assert.True(Int(r, "app_diff_bytes") == 16 && Int(r, "app_libs_diff") == 1 && (string?)r["diffed_libs"] == "Flutter");
+            var r = AppCoverage(new[] { Main, Image("Frameworks/Engine.framework/Engine", Compared(4_194_304, differing: 16)) }, 435);
+            Assert.True(Int(r, "app_diff_bytes") == 16 && Int(r, "app_libs_diff") == 1 && (string?)r["diffed_libs"] == "Engine");
         }
 
         [Fact]
@@ -331,7 +331,7 @@ namespace Necessary.Tests
 
             // The TrollStore case of 2026-10-31: the main executable skipped, no
             // difference invented, incomplete.
-            var r = AppCoverage(new[] { Image("Runner", ImageOutcome.Skipped(191_160, other!.Reason), main: true), Flutter, App }, 435);
+            var r = AppCoverage(new[] { Image("Runner", ImageOutcome.Skipped(191_160, other!.Reason), main: true), Engine, App }, 435);
             Assert.True(AddsUp(r) && Bool(r, "app_complete") == false && Int(r, "app_diff_bytes") == 0
                 && Int(r, "app_skipped_bytes") == 191_160 && Bool(r, "main_executable_compared") == false);
         }
@@ -339,7 +339,7 @@ namespace Necessary.Tests
         [Fact]
         public void An_image_dyld_cannot_name_is_an_app_image_not_read_never_dropped()
         {
-            var r = AppCoverage(new[] { Main, Flutter, App, UnlistedImage(7) }, 435);
+            var r = AppCoverage(new[] { Main, Engine, App, UnlistedImage(7) }, 435);
             Assert.True(AddsUp(r));
             Assert.True(Bool(r, "app_complete") == false && Int(r, "app_images_unreadable") == 1 && Int(r, "app_unreadable_bytes") == 0);
             Assert.Equal("dyld gave no name or header for it", (string?)(r["app_images_not_compared"] as JsonObject)?["image 7"]);
@@ -353,7 +353,7 @@ namespace Necessary.Tests
             static IEnumerable<byte> Be(long value) => Enumerable.Range(0, 4).Reverse().Select(i => (byte)((value >> (8 * i)) & 0xff));
             Assert.Equal(0, Arm64Slice(MachO(Running)));
 
-            // One arm64 slice at 16384, as Flutter's App.framework is built.
+            // One arm64 slice at 16384, as a universal framework with one slice is laid out.
             var fat = Be(0xcafebabe).Concat(Be(1)).Concat(Be(0x0100000c)).Concat(Be(0)).Concat(Be(16384)).Concat(Be(5_830_480)).Concat(Be(14)).ToArray();
             Assert.Equal(16384, Arm64Slice(fat));
             var twoArchs = Be(0xcafebabe).Concat(Be(2)).Concat(Be(0x01000007)).Concat(Be(3)).Concat(Be(4096)).Concat(Be(100)).Concat(Be(12))

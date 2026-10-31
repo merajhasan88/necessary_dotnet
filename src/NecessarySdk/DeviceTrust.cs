@@ -121,8 +121,7 @@ namespace Necessary
     /// Calls at once share their run: <see cref="StartAsync"/>,
     /// <see cref="ProveAsync"/>, <see cref="LoadIdentityAsync"/> and the same
     /// <see cref="ScanAsync"/>. The object's own work runs one step at a time,
-    /// in order, on a scheduler of its own -- as the Flutter plugin's runs on
-    /// its isolate's event loop -- so <see cref="OnRegistered"/> is called there,
+    /// in order, on a scheduler of its own, so <see cref="OnRegistered"/> is called there,
     /// not on the caller's thread.
     /// </remarks>
     public sealed class DeviceTrust : IDisposable

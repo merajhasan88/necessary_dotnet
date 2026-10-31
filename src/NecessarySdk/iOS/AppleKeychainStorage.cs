@@ -7,10 +7,9 @@ namespace Necessary
 {
     /// <summary>
     /// The package's few values in the iOS Keychain: on this device only,
-    /// readable after the first unlock, never synchronized -- the Flutter
-    /// plugin's storage options. A value can outlive the app, as the
-    /// installation key can: the same installation comes back with it. Apart
-    /// from the keys' serial queue, as the plugin's storage is.
+    /// readable after the first unlock, never synchronized. A value can outlive
+    /// the app, as the installation key can: the same installation comes back
+    /// with it. It is apart from the keys' serial queue.
     /// </summary>
     public sealed class AppleKeychainStorage : ISecureStorage
     {

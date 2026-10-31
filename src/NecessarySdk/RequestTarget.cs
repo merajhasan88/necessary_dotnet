@@ -7,7 +7,7 @@ namespace Necessary
 {
     /// <summary>
     /// A request's target -- its path with the query -- split and normalized
-    /// exactly as the Flutter plugin's <c>Uri.parse</c> does: the fragment
+    /// exactly as Dart's <c>Uri.parse</c> does: the fragment
     /// dropped, dot segments removed from an absolute path, a percent escape of
     /// an unreserved character decoded and any other written in upper case, and
     /// a character a path or query may not hold percent-encoded as UTF-8. A

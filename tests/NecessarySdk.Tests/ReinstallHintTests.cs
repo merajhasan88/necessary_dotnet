@@ -1,6 +1,6 @@
 // The reinstall hint's bytes: what a backend keys and stores to link
 // reinstalls, so a phone's hint must not change when the package's code does.
-// The digests are the Flutter plugin's, computed apart by Python's hashlib.
+// The digests are the reference ones, computed apart by Python's hashlib.
 using System.Threading.Tasks;
 using Xunit;
 

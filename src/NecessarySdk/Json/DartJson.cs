@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 namespace Necessary
 {
     /// <summary>
-    /// JSON text exactly as the Flutter plugin's <c>jsonEncode</c> writes it, so
+    /// JSON text exactly as Dart's <c>jsonEncode</c> writes it, so
     /// that every message, header and signed payload is the same byte for byte:
     /// members in the order given, no spaces, characters beyond ASCII as they
     /// are (UTF-8), only <c>"</c>, <c>\</c> and control characters escaped, and

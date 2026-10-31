@@ -51,7 +51,7 @@ void main(List<String> args) {
   }
   stdout.write(const JsonEncoder.withIndent(' ').convert({
     'targets': targetCases,
-    'about': 'Made by Dart ${Platform.version.split(' ').first} jsonEncode: the bytes the Flutter plugin sends. tests/NecessarySdk.Tests/DartJsonTests.cs holds the .NET encoder to them.',
+    'about': 'Made by Dart ${Platform.version.split(' ').first} jsonEncode: the reference bytes. tests/NecessarySdk.Tests/DartJsonTests.cs holds the .NET encoder to them.',
     'cases': cases,
     'doubles': doubleCases,
   }));

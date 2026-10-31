@@ -96,7 +96,7 @@
    "query": "%22r%22"
   }
  ],
- "about": "Made by Dart 3.12.0 jsonEncode: the bytes the Flutter plugin sends. tests/NecessarySdk.Tests/DartJsonTests.cs holds the .NET encoder to them.",
+ "about": "Made by Dart 3.12.0 jsonEncode: the reference bytes. tests/NecessarySdk.Tests/DartJsonTests.cs holds the .NET encoder to them.",
  "cases": [
   {
    "name": "android-8-complete.json",

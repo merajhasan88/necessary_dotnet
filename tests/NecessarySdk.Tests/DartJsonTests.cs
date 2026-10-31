@@ -1,4 +1,4 @@
-// The bytes Dart's jsonEncode writes -- the Flutter plugin's messages -- and
+// The bytes Dart's jsonEncode writes -- the messages' reference -- and
 // the .NET encoder's, held equal: every contract sample's report, strings with
 // escapes, characters beyond ASCII and outside the BMP, and doubles at the
 // edges of Dart's decimal and exponent notations. The fixture was written by

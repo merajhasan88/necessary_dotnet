@@ -118,9 +118,8 @@ namespace Necessary
         };
 
         /// <summary>
-        /// The app's own native code by name. The Flutter plugin names the Flutter
-        /// engine and the Dart AOT code; a .NET for Android app's own native code
-        /// is the .NET runtime and its host instead, so these are their names. A
+        /// The app's own native code by name: a .NET for Android app's own native
+        /// code is the .NET runtime and its host, so these are their names. A
         /// release APK maps its native libraries straight out of the
         /// (uncompressed) archive unless it extracts them, so <c>/proc/self/maps</c>
         /// shows them backed by <c>base.apk</c>: the app's own APKs are therefore

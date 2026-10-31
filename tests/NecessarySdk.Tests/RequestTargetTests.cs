@@ -1,4 +1,4 @@
-// A request's target, split and normalized as the Flutter plugin's Uri.parse
+// A request's target, split and normalized as Dart's Uri.parse
 // does: the path and query a proof signs and the transport sends. The expected
 // values were written by Dart itself (tools/dart_json_fixture.dart).
 using System;

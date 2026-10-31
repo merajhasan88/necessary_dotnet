@@ -4,7 +4,8 @@
 
 - The package's website, [necessarysdk.com](https://necessarysdk.com), is named in the README and is
   the package's project URL, so nuget.org shows it as the project website; the source repository stays
-  GitHub. The README and the package's description describe this package on its own. No code changed.
+  GitHub. The package's README, description, documents, comments and tests describe it on its own. No code
+  changed.
 
 ## 0.1.7
 
@@ -23,13 +24,12 @@
   ahead of time and extracts (`libaot-*.dll.so`), the runtime's other libraries, the Java and Kotlin
   Android compiled (`base.odex`). A hook in an extracted assembly is now found, where 0.1.5 named such
   files in `app_outside_count` without comparing them; `app_outside_count` is now 0. This closes the
-  release review's item 5 for .NET; the Flutter plugin's region (collector 10) is narrower, and the
+  release review's item 5 for .NET; the earlier region (collector 10) is narrower, and the
   collector version tells them apart.
 
 ## 0.1.5
 
-The .NET translation of the Flutter plugin `necessary` 0.1.5 (necessary_flutter `07e94e7`), which
-answers a release review of this package and carries the same fixes; the wire is unchanged — every
+The answer to a release review of this package; the wire is unchanged — every
 message, header and signed payload, the shared vectors and the contract's fields.
 
 - Android (collector 10): the code comparison reads the memory map once, whole, and takes every region
@@ -73,8 +73,7 @@ message, header and signed payload, the shared vectors and the contract's fields
 
 ## 0.1.1
 
-The .NET translation of the Flutter plugin `necessary` 0.1.1 (necessary_flutter `4a4c0e0`): the same
-calls, the same messages byte for byte, the same measurements and fields, the same lifecycle.
+The first release.
 
 - `DeviceTrust`: start, prove, scan, request proofs, step-up with its re-enrolment, the app PIN, reset
   and close; one installation generation at a time; calls at once share one run.

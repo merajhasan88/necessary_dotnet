@@ -226,8 +226,8 @@ namespace Necessary
 
     /// <summary>
     /// A transparent activity that starts one intent for its result, or asks for
-    /// permissions, and finishes: what a Flutter plugin's activity binding gives
-    /// it, without the app forwarding <c>OnActivityResult</c>.
+    /// permissions, and finishes, so the app need not forward
+    /// <c>OnActivityResult</c>.
     /// </summary>
     [Activity(
         Name = "com.meraj.necessarysdk.ProxyActivity",

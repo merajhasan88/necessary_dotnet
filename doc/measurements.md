@@ -263,13 +263,13 @@ the C library and the Android runtime (`libc.so`, `libart.so`); `ext` — other 
 hooks aim at (`libc++.so`, `libssl.so`, `libcrypto.so`, `libandroid_runtime.so`, `libbinder.so`); `app`
 — the app's own native code: what is mapped from the APKs the app was installed from (its base APK and
 its split APKs, by their exact paths — never another package's APK the app has loaded code from, such
-as the WebView's), and the libraries the SDK names wherever they are (the Flutter SDK: the Flutter
-engine, `libflutter.so`, and the compiled Dart, `libapp.so`). That is a selection, and it depends on
-how the app is packaged: a build that keeps its native libraries in its APKs (the default) has all of
-them measured; one that extracts them leaves those under other names — another plugin's, say — outside
-`app`. The report says what it leaves out: every executable file of the app's own that is mapped but
-not in `app` — an extracted library, the app's Java and Kotlin compiled by Android — is counted in
-`app_outside_count` and named in `app_outside_files`. Code compiled as the app runs has no file to be
+as the WebView's), the libraries the SDK names wherever they are (the .NET runtime and its host:
+`libmonosgen-2.0.so`, `libmonodroid.so`, `libxamarin-app.so`, the `System.*` native libraries), and
+every other executable file of the app's own that is mapped — the assemblies a release build compiles
+ahead of time and extracts (`libaot-*.dll.so`), the app's Java and Kotlin compiled by Android
+(`base.odex`) — each under its own name. An executable file of the app's own that is mapped but not in
+`app` would be counted in `app_outside_count` and named in `app_outside_files`; from collector 11
+there is none. Code compiled as the app runs has no file to be
 compared with, and is in neither.
 In each region expected = compared + skipped + unreadable, and `<region>_complete` is true exactly when
 some code was expected and all of it was compared. Any differing byte is code changed while the app
@@ -370,7 +370,7 @@ memory page size.
 Whether a VPN is up and an HTTP proxy is set, as Android's connectivity service says: every network is
 asked, not only the default one, since a VPN is a network of its own. Interface names only, never an
 address. The proxy says how the phone is set, not which way the report came: whether an app's own
-requests follow it depends on how the app makes them (a Flutter app's do not). A listing of the
+requests follow it depends on how the app makes them. A listing of the
 interfaces that failed, whole or for one interface, is in `unread` as `interfaces`: the list is then
 not all of them.
 
@@ -673,7 +673,7 @@ apart.
 Whether a VPN or an HTTP proxy is in use. iOS gives apps no way to ask about a VPN, so a VPN is inferred
 from the network interfaces the system proxy settings are scoped to (`utun`, `ipsec`, `ppp`, `tun`,
 `tap`): a heuristic, so the names come with it. The proxy is read from the system proxy settings;
-whether an app's own requests follow it depends on how the app makes them (a Flutter app's do not).
+whether an app's own requests follow it depends on how the app makes them.
 
 **When:** every scan, whether or not your backend asks.
 

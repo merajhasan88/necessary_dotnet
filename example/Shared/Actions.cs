@@ -90,7 +90,7 @@ namespace Necessary.Example
             {
                 outcome = new Outcome(action, "The phone said " + error.Code + ": " + error.Message, false);
             }
-#pragma warning disable CA1031 // Whatever failed is shown, as the Flutter example shows it.
+#pragma warning disable CA1031 // Whatever failed is shown.
             catch (Exception error)
 #pragma warning restore CA1031
             {

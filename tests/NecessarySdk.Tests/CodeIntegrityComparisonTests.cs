@@ -158,12 +158,15 @@ namespace Necessary.Tests
         {
             // A file truncated after it was mapped: whole pages past its end fault
             // when touched, so they are counted unreadable, never read.
+            // Two of this machine's pages past the end: 4 KiB on Linux, 16 KiB on
+            // an Apple silicon Mac.
+            var past = 2 * (ulong)CodeIntegrityComparison.PageSize;
             var memory = new FakeMemory();
-            memory.Map(0x20000, 4 * Page, "r-xp", "/system/lib64/libart.so");
+            memory.Map(0x20000, Page + past, "r-xp", "/system/lib64/libart.so");
             memory.ShortFiles["/system/lib64/libart.so"] = (int)Page;
             var result = CodeIntegrityComparison.Compare(memory, AppOwn.None);
             Assert.Equal((long)Page, Long(result, "core_compared_bytes"));
-            Assert.Equal(3 * (long)Page, Long(result, "core_unreadable_bytes"));
+            Assert.Equal((long)past, Long(result, "core_unreadable_bytes"));
             Assert.False((bool)result["core_complete"]!);
             AddsUp(result);
         }

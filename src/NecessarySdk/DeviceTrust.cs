@@ -468,9 +468,6 @@ namespace Necessary
             }
         }
 
-        private static string RequireString(JsonObject answer, string field) =>
-            Json.String(answer[field]) ?? throw new InvalidCastException("The backend's " + field + " is not a string.");
-
         /// <summary>Runs <paramref name="work"/> on this object's own scheduler.</summary>
         private Task<T> OnLoop<T>(Func<Task<T>> work)
         {
@@ -650,12 +647,12 @@ namespace Necessary
             try
             {
                 var challenge = await Client.CreateInstallationChallengeAsync(installation.InstallationId);
-                var payload = RequireString(challenge, "payload");
-                var challengeId = RequireString(challenge, "challenge_id");
+                var payload = Json.AnswerText(challenge, "payload");
+                var challengeId = Json.AnswerText(challenge, "challenge_id");
                 var signature = await installation.SignPayloadAsync(payload);
                 var verified = await Client.VerifyInstallationAsync(installation.InstallationId, challengeId, payload, signature);
                 Current(callGeneration);
-                var token = RequireString(verified, "device_token");
+                var token = Json.AnswerText(verified, "device_token");
                 session = token;
                 return token;
             }
@@ -1003,20 +1000,33 @@ namespace Necessary
             Current(callGeneration);
             stepUpKey.ConfiguredMode = options.Mode;
 
+            // From here the phone's key and the backend's differ until the backend
+            // takes the new one: approvals wait for that.
+            async Task HoldApprovals()
+            {
+                await Mutate(callGeneration, () => store.SetStepUpReenrolPendingAsync(true));
+                Current(callGeneration);
+                offeredStepUpKey = null;
+                stepUpUnavailable = ReenrolPending();
+            }
+
             async Task<StepUpKeyMetadata> NewKey(bool replace)
             {
                 if (replace)
                 {
-                    // From here the phone's key and the backend's differ until the
-                    // backend takes the new one: approvals wait for that.
-                    await Mutate(callGeneration, () => store.SetStepUpReenrolPendingAsync(true));
-                    Current(callGeneration);
-                    offeredStepUpKey = null;
-                    stepUpUnavailable = ReenrolPending();
+                    await HoldApprovals();
                     await Mutate(callGeneration, () => stepUpKey.DeleteKeyAsync());
                 }
 
-                return await Mutate(callGeneration, () => stepUpKey.GetOrCreateKeyAsync(options.Factor, options.Mode, options.WindowSeconds));
+                var made = await Mutate(callGeneration, () => stepUpKey.GetOrCreateKeyAsync(options.Factor, options.Mode, options.WindowSeconds));
+
+                // None to replace, the phone having lost it: this one is as new.
+                if (made.Created && !replace)
+                {
+                    await HoldApprovals();
+                }
+
+                return made;
             }
 
             // A re-enrolment is the explicit recovery: a key the keystore cannot

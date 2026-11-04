@@ -557,6 +557,8 @@ namespace Necessary
             var suspiciousCount = 0;
             var unnamed = 0;
             var imageCount = Native._dyld_image_count();
+            var bundlePath = NSBundle.MainBundle.BundlePath;
+            var mainName = Path.GetFileName(NSBundle.MainBundle.ExecutablePath);
             for (uint index = 0; index < imageCount; index++)
             {
                 var raw = Native._dyld_get_image_name(index);
@@ -566,18 +568,9 @@ namespace Necessary
                     continue;
                 }
 
-                var name = (Marshal.PtrToStringUTF8(raw) ?? string.Empty).ToLowerInvariant();
-                var matched = false;
-                foreach (var token in SuspiciousImageTokens)
-                {
-                    if (name.Contains(token, StringComparison.Ordinal))
-                    {
-                        tokens.Add(token);
-                        matched = true;
-                    }
-                }
-
-                if (matched)
+                var named = ImageTokens(Marshal.PtrToStringUTF8(raw) ?? string.Empty, bundlePath, mainName, SuspiciousImageTokens);
+                tokens.UnionWith(named);
+                if (named.Count > 0)
                 {
                     suspiciousCount++;
                 }

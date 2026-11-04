@@ -1,8 +1,8 @@
 # Measurements — what the SDKs measure on the phone
 
 Every measurement a Necessary SDK can put in a signed report, field by field: what it is, how the
-SDK measures it, and what a complete answer holds. Every SDK sends the same report, whatever framework
-your app is built with, and none sends a score or a verdict;
+SDK measures it, and what a complete answer holds. Every SDK sends its report in the same format, whatever
+framework your app is built with, and none sends a score or a verdict;
 what a measurement means for a request is your backend's decision. The integration guide
 (`integration_guide.md`, beside this file) is the protocol — how your backend asks for a scan and checks
 the report — and its section 7 is about deciding with these measurements.
@@ -44,8 +44,8 @@ measurements — a probe — and each row of a table one of its fields.
 Each probe says when it comes:
 
 - **your backend asks for it**, in the challenge's `required_probes`. Ask every time for each
-  measurement you rely on, and vary the others from scan to scan;
-- **every scan**, whether or not your backend asks. Rely on one only by asking for it: until you do, its
+  measurement you need, and vary the others from scan to scan;
+- **every scan**, whether or not your backend asks. If you need one, ask for it: until you do, its
   absence or failure does not make a report incomplete;
 - **a personal measurement**, only when your backend lists it in `optional_probes` and your app enables
   it in its SDK (the SDK's README says how) — the location only with the person's permission as well.
@@ -93,7 +93,7 @@ APK that could not be hashed as `split_apks:<file name>`.
 | `split_apks` | list |  | the installed split APKs, apart from the base APK: each its file `name` and its `sha256`, sorted by name, at most 64; empty for an install without splits |
 | `version_name` | text |  | the app's version name |
 | `version_code` | integer |  | the app's version code |
-| `installer_package` | text, or null |  | the package that installed the app; null when none is named — installed with adb, or by an installer that names none |
+| `installer_package` | text, or null |  | the package that installed the app; left out or null when none is named — installed with adb, or by an installer that names none |
 | `source_dir` | text |  | the base APK's path on the phone |
 
 ### `debug_state`

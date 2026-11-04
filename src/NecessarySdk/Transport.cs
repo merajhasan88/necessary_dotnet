@@ -151,6 +151,20 @@ namespace Necessary
             {
                 throw new ApiException("HTTP connection failed: " + error.Message, innerException: error);
             }
+#pragma warning disable CA1031 // Said to the app as every failure of a call is, the failure beneath it kept.
+            catch (Exception error) when (error is not OperationCanceledException && error is not ObjectDisposedException)
+#pragma warning restore CA1031
+            {
+                // A phone's HTTP stack fails in its own words: .NET's Android handler
+                // says a connection lost once it was made as its own failure, not an
+                // HttpRequestException (a refused TLS handshake is one), and a timeout
+                // may reach it the same way.
+                throw new ApiException(
+                    deadline.IsCancellationRequested
+                        ? "The server did not respond before the timeout."
+                        : "The connection failed: " + error.Message,
+                    innerException: error);
+            }
 
             using (response)
             {

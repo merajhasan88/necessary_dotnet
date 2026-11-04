@@ -4,6 +4,7 @@
 // none answers a clean "no". The plugin's ProbeReadsTest.kt, translated.
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -144,6 +145,60 @@ namespace Necessary.Tests
             var all = Threads(new[] { "main", "gum-js-loop" }, 0, frida, glib, Array.Empty<string>());
             Assert.Equal(new[] { "gum-js-loop" }, ((JsonArray)all["frida_threads"]!).Select(n => (string)n!));
             Assert.Null(Unread(all));
+        }
+
+        [Fact]
+        public void The_apps_own_names_are_no_tools()
+        {
+            var tokens = new[] { "tool", "gadget" };
+            const string name = "com.example.toolbox";
+            const string install = "/data/app/~~Ztool==/" + name + "-Qgadget==/";
+            var own = new[] { install, "/data/user/0/" + name + "/" };
+            static string Line(string path) => "7a0000-7b0000 r-xp 00000000 fd:00 123  " + path;
+            IReadOnlyList<string> Names(string text) => NamesIn(text, own, name, tokens);
+            Assert.Empty(Names(Line(install + "base.apk")));
+            Assert.Empty(Names(Line("/data/user/0/" + name + "/files/plugin.so")));
+            Assert.Empty(Names("[anon:dalvik-classes.dex extracted in memory from " + install + "base.apk]"));
+            Assert.Empty(Names(Line("/storage/emulated/0/Android/data/" + name + "/files/plugin.so")));
+
+            // What lies inside the app's folders, and anything elsewhere, is read.
+            Assert.Equal(tokens, Names(Line(install + "lib/arm64/libtool-gadget.so")));
+            Assert.Equal(new[] { "tool" }, Names(Line("/data/local/tmp/TOOL-agent.so")));
+
+            // An assembly of the app's, compiled ahead of time; only in the app's
+            // own folders.
+            Assert.Empty(Names(Line(install + "lib/arm64/libaot-Toolbox.Mobile.dll.so")));
+            Assert.Equal(new[] { "tool" }, Names(Line("/data/local/tmp/libaot-Toolbox.dll.so")));
+            Assert.Equal(new[] { "tool" }, Names(Line(install + "lib/arm64/libToolbox.so")));
+        }
+
+        [Fact]
+        public void A_thread_named_for_the_app_names_no_tool()
+        {
+            var tokens = new[] { "tool" };
+            var none = Array.Empty<string>();
+            const string name = "com.example.toolbox";
+            var main = Threads(new[] { "example.toolbox" }, 0, none, none, tokens, name);
+            Assert.Empty((JsonArray)main["token_threads"]!);
+            var tool = Threads(new[] { "example.toolbox", "tool-worker" }, 0, none, none, tokens, name);
+            Assert.Equal(tokens, ((JsonArray)tool["token_threads"]!).Select(n => (string)n!));
+        }
+
+        [Fact]
+        public void A_shells_complaint_is_no_path_to_su()
+        {
+            // As the collector runs it, the error stream merged, on a phone with
+            // neither su nor which.
+            var start = new ProcessStartInfo("/bin/sh") { RedirectStandardOutput = true, UseShellExecute = false };
+            start.ArgumentList.Add("-c");
+            start.ArgumentList.Add("exec 2>&1; " + RootShellLookup);
+            start.Environment["PATH"] = "/nowhere";
+            using var shell = Process.Start(start)!;
+            var output = shell.StandardOutput.ReadToEnd();
+            shell.WaitForExit();
+            var lookup = RootShell(new CommandResult(true, true, shell.ExitCode, output));
+            Assert.Equal(string.Empty, (string?)lookup["su_path"]);
+            Assert.False((bool)lookup["su_found"]!);
         }
 
         [Fact]

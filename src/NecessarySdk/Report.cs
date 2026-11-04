@@ -63,16 +63,13 @@ namespace Necessary
                     : (IReadOnlyList<string>)Array.Empty<string>();
 
             return new ScanChallenge(
-                Required(value, "challenge_id"),
-                Required(value, "nonce"),
-                Required(value, "platform"),
+                Json.AnswerText(value, "challenge_id"),
+                Json.AnswerText(value, "nonce"),
+                Json.AnswerText(value, "platform"),
                 Names(value["required_probes"]),
                 Names(value["optional_probes"]),
                 value);
         }
-
-        private static string Required(JsonObject value, string field) =>
-            Json.String(value[field]) ?? throw new InvalidCastException("The challenge's " + field + " is not a string.");
     }
 
     /// <summary>A report as the installation key signed it.</summary>

@@ -126,6 +126,46 @@ namespace Necessary
             return Ok(("tracer_pid", pid), ("seccomp", seccomp), ("no_new_privs", noNewPrivs));
         }
 
+        /// <summary>
+        /// The listed names in one line of the memory map, in any case. The app's
+        /// own folders and package name are taken out of the line first: Android
+        /// names those folders after the package, with random text beside it, and
+        /// neither names a tool. Nor does an assembly a release build compiles ahead
+        /// of time there: .NET names each libaot-&lt;assembly&gt;.dll.so, after the
+        /// app's own assemblies. What else lies inside those folders is still read,
+        /// so a library the app was rebuilt with is found by its own name.
+        /// </summary>
+        public static IReadOnlyList<string> NamesIn(
+            string line,
+            IReadOnlyList<string> ownFolders,
+            string packageName,
+            IReadOnlyList<string> tokens)
+        {
+            var text = line;
+            var own = false;
+            foreach (var folder in ownFolders)
+            {
+                own |= text.Contains(folder, StringComparison.Ordinal);
+                text = text.Replace(folder, "/", StringComparison.Ordinal);
+            }
+
+            var file = text.LastIndexOf('/') + 1;
+            if (own
+                && string.CompareOrdinal(text, file, "libaot-", 0, "libaot-".Length) == 0
+                && text.EndsWith(".dll.so", StringComparison.Ordinal))
+            {
+                text = text.Substring(0, file);
+            }
+
+            if (packageName.Length > 0)
+            {
+                text = text.Replace(packageName, string.Empty, StringComparison.Ordinal);
+            }
+
+            var lower = text.ToLowerInvariant();
+            return tokens.Where(token => lower.Contains(token, StringComparison.Ordinal)).ToList();
+        }
+
         /// <summary>The two developer settings, each read on its own: a read that threw is unread, not "off".</summary>
         public static JsonObject DeveloperSettings(Outcome<bool> adb, Outcome<bool> developer)
         {
@@ -149,6 +189,9 @@ namespace Necessary
                 Ok(("adb_enabled", adb.IsFailure ? null : (object)adb.Value), ("developer_options_enabled", developer.IsFailure ? null : (object)developer.Value)),
                 unread);
         }
+
+        /// <summary>The shell's lookup of <c>su</c>, its error stream kept out of the answer.</summary>
+        public const string RootShellLookup = "command -v su 2>/dev/null || which su 2>/dev/null || true";
 
         /// <summary><c>command -v su</c>: a lookup that could not run, or never finished, is not "no su".</summary>
         public static JsonObject RootShell(CommandResult lookup)
@@ -225,14 +268,17 @@ namespace Necessary
         /// <summary>
         /// This process's thread names. A thread that ended between listing and
         /// reading is gone, not unread; one whose name could not be read is
-        /// unread, since a renamed instrumentation thread could be that one.
+        /// unread, since a renamed instrumentation thread could be that one. A
+        /// thread named for the app itself -- Android gives the main thread part
+        /// of the package's name, 15 characters at most -- names no tool.
         /// </summary>
         public static JsonObject Threads(
             IReadOnlyList<string> names,
             int unreadable,
             IReadOnlyList<string> fridaThreads,
             IReadOnlyList<string> glibThreads,
-            IReadOnlyList<string> tokens)
+            IReadOnlyList<string> tokens,
+            string packageName = "")
         {
             var named = names.Where(name => name.Length > 0).ToList();
             if (named.Count == 0)
@@ -260,6 +306,11 @@ namespace Necessary
                     {
                         glibHits.Add(t);
                     }
+                }
+
+                if (packageName.Contains(name, StringComparison.Ordinal))
+                {
+                    continue;
                 }
 
                 foreach (var t in tokens)

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.9
+
+- `runtime_maps`, `instrumentation_threads` and iOS `dyld_images` leave the app's own folders, package
+  name, main executable and compiled assemblies out of what they read as names.
+- Android: `root_shell` keeps the shell's error stream out of `su_path`.
+- Android: a step-up signature that fails after the person approved answers the app, whatever failed.
+- A step-up key the phone lost and a re-enrolment made again leaves approvals waiting until the backend
+  takes it, like a key replaced.
+- Every call that got no answer is an `ApiException`, on a phone too; so is a backend's answer that lacks
+  a field the package needs (`invalid_backend_answer`).
+- The Python sample backend answers a malformed request with a refusal.
+- `doc/measurements.md`: `installer_package` is left out or null when no installer is named; every SDK
+  sends its report in the same format. `doc/integration_guide.md`, section 7.2: how a runtime that compiles
+  code as the app runs shows itself.
+- The package's title, description and tags say device integrity.
+
 ## 0.1.8
 
 - The package's website, [necessarysdk.com](https://necessarysdk.com), is named in the README and is

@@ -246,6 +246,43 @@ namespace Necessary.Tests
         }
 
         [Fact]
+        public async Task A_key_the_phone_lost_made_again_by_a_reenrolment_the_person_cancelled_leaves_approvals_waiting_too()
+        {
+            var store = new Store();
+            var trust = Trust(new Backend(), store, stepUpKey: new LostStepUpKey(), stepUp: new StepUpOptions());
+            await trust.StartAsync();
+            Task<JsonObject> Reenrol() => trust.ReenrolStepUpAsync("account-session", Obj("{\"password\":\"pw\"}"));
+            await Assert.ThrowsAsync<NativeKeyException>(Reenrol);
+            await ReenrolPending(() => Approve(trust));
+            Assert.True(store.ReenrolPending);
+            Assert.True((bool)(await Reenrol())["stepup_key_registered"]!);
+            Assert.False(store.ReenrolPending);
+            Assert.Contains("X-Step-Up-Proof", (await Approve(trust)).Headers.Keys);
+        }
+
+        [Fact]
+        public async Task An_answer_that_lacks_a_field_is_an_ApiException_never_a_cast_error()
+        {
+            static async Task Refused(Func<Task> call)
+            {
+                var error = await Assert.ThrowsAsync<ApiException>(call);
+                Assert.Equal("invalid_backend_answer", error.Code);
+            }
+
+            var unproved = Trust(new Backend(new Dictionary<string, List<object>>
+            {
+                ["/v1/installations/verify"] = new List<object> { new JsonObject() },
+            }));
+            await Refused(() => unproved.StartAsync());
+            var trust = Trust(new Backend(new Dictionary<string, List<object>>
+            {
+                ["/v1/integrity/challenge"] = new List<object> { Obj("{\"challenge_id\":\"scan-challenge\"}") },
+            }));
+            await trust.StartAsync();
+            await Refused(() => trust.ScanAsync());
+        }
+
+        [Fact]
         public async Task A_backend_that_says_it_does_not_hold_the_step_up_key_offered_leaves_approvals_waiting_for_reenrolment_one_that_says_it_does_clears_that()
         {
             var backend = new Backend(new Dictionary<string, List<object>>
@@ -869,6 +906,38 @@ namespace Necessary.Tests
             public override Task<string> SignAsync(string payloadBase64Url, string reason)
             {
                 if (Deleted > 0 && !cancelled)
+                {
+                    cancelled = true;
+                    return Task.FromException<string>(new NativeKeyException("STEPUP_CANCELLED", "the person cancelled"));
+                }
+
+                return base.SignAsync(payloadBase64Url, reason);
+            }
+        }
+
+        /// <summary>A key the phone lost after it was registered: the next one is made new, and the person cancels its first prompt.</summary>
+        internal sealed class LostStepUpKey : StepUpKeyFake
+        {
+            private int asked;
+            private bool cancelled;
+
+            public override async Task<StepUpKeyMetadata> GetOrCreateKeyAsync(string factor, string mode, int windowSeconds)
+            {
+                asked += 1;
+                var key = await base.GetOrCreateKeyAsync(factor, mode, windowSeconds);
+                return new StepUpKeyMetadata(
+                    key.PublicKey,
+                    key.Factor,
+                    key.Mode,
+                    key.WindowSeconds,
+                    key.SecurityLevel,
+                    key.HardwareBacked,
+                    asked > 1);
+            }
+
+            public override Task<string> SignAsync(string payloadBase64Url, string reason)
+            {
+                if (asked > 1 && !cancelled)
                 {
                     cancelled = true;
                     return Task.FromException<string>(new NativeKeyException("STEPUP_CANCELLED", "the person cancelled"));

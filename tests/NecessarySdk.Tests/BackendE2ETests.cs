@@ -443,6 +443,27 @@ namespace Necessary.Tests
             Assert.Equal("/v1/demo/sensitive", (string?)(await Sensitive())["done"]);
         }
 
+        [BackendFact]
+        public async Task A_malformed_request_is_answered_never_a_connection_dropped()
+        {
+            async Task Answered(string path, string body)
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, Backend + path)
+                {
+                    Content = new StringContent(body, Encoding.UTF8, "application/json"),
+                };
+                using var response = await Controls.SendAsync(request);
+                Assert.True((int)response.StatusCode >= 400);
+                Assert.IsType<JsonObject>(Obj(await response.Content.ReadAsStringAsync())["error"]);
+            }
+
+            // A payload that is valid base64url, of JSON that is no object.
+            var notAnObject = Wire.Base64UrlNoPadding(Encoding.UTF8.GetBytes("[]"));
+            await Answered("/v1/installations/verify", "{\"payload\":\"" + notAnObject + "\"}");
+            await Answered("/v1/installations/challenge", "{\"installation_id\":[]}");
+            await Answered("/v1/installations/register", "{\"installation_id\":5}");
+        }
+
         [BackendControlsFact]
         public async Task The_guides_protocol_errors_each_acted_on_once()
         {

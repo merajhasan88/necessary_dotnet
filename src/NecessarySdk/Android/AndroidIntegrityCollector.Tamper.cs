@@ -192,9 +192,11 @@ namespace Necessary
             Build.Tags ?? string.Empty);
 
         // A lookup that could not start, or never finished, is not "no su": the
-        // probe fails, and the report says it measured nothing.
+        // probe fails, and the report says it measured nothing. What the shell
+        // says on its error stream is kept out: RunCommand merges it, and a
+        // complaint that `which` is missing would read as a path to su.
         private static JsonObject ProbeRootShell() =>
-            RootShell(RunCommand("/system/bin/sh", "-c", "command -v su || which su || true"));
+            RootShell(RunCommand("/system/bin/sh", "-c", RootShellLookup));
 
         private static JsonObject ProbeSystemProperties()
         {
@@ -249,7 +251,7 @@ namespace Necessary
         // An unreadable /proc/mounts is no measurement, never "no writable mount".
         private static JsonObject ProbeMounts() => Mounts(ReadLines("/proc/mounts"));
 
-        private static JsonObject ProbeRuntimeMaps()
+        private JsonObject ProbeRuntimeMaps()
         {
             var lines = ReadLines("/proc/self/maps");
             if (lines is null)
@@ -259,24 +261,20 @@ namespace Necessary
 
             var found = new List<string>();
             var suspiciousLines = 0;
-            foreach (var original in lines)
+            var folders = OwnFolders();
+            var packageName = context.PackageName ?? string.Empty;
+            foreach (var line in lines)
             {
-                var line = original.ToLowerInvariant();
-                var lineMatched = false;
-                foreach (var token in SuspiciousRuntimeTokens)
+                var named = NamesIn(line, folders, packageName, SuspiciousRuntimeTokens);
+                foreach (var token in named)
                 {
-                    if (line.Contains(token, StringComparison.Ordinal))
+                    if (!found.Contains(token))
                     {
-                        if (!found.Contains(token))
-                        {
-                            found.Add(token);
-                        }
-
-                        lineMatched = true;
+                        found.Add(token);
                     }
                 }
 
-                if (lineMatched)
+                if (named.Count > 0)
                 {
                     suspiciousLines++;
                 }
@@ -382,7 +380,7 @@ namespace Necessary
         /// /proc/self/task/&lt;tid&gt;/comm, which an app can always read for its own
         /// threads.
         /// </summary>
-        private static JsonObject ProbeInstrumentationThreads()
+        private JsonObject ProbeInstrumentationThreads()
         {
             // Unmistakably Frida/Gum: compiled into the framework, so a renamed
             // injected library keeps them.
@@ -427,7 +425,24 @@ namespace Necessary
                 }
             }
 
-            return Threads(names, unreadable, fridaThreads, glibThreads, SuspiciousRuntimeTokens);
+            return Threads(names, unreadable, fridaThreads, glibThreads, SuspiciousRuntimeTokens, context.PackageName ?? string.Empty);
+        }
+
+        /// <summary>The folders the app's own files live in: its install folder and its data folders.</summary>
+        private string[] OwnFolders()
+        {
+            var info = context.ApplicationInfo!;
+            return new[]
+                {
+                    string.IsNullOrEmpty(info.SourceDir) ? null : Path.GetDirectoryName(info.SourceDir) + "/",
+                    string.IsNullOrEmpty(info.DataDir) ? null : info.DataDir + "/",
+                    "/data/data/" + context.PackageName + "/",
+                    string.IsNullOrEmpty(info.DeviceProtectedDataDir) ? null : info.DeviceProtectedDataDir + "/",
+                }
+                .Where(dir => dir is not null)
+                .Select(dir => dir!)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
         }
 
         /// <summary>
@@ -613,17 +628,7 @@ namespace Necessary
                 .Select(path => path!)
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
-            var dirs = new[]
-                {
-                    string.IsNullOrEmpty(info.SourceDir) ? null : Path.GetDirectoryName(info.SourceDir) + "/",
-                    string.IsNullOrEmpty(info.DataDir) ? null : info.DataDir + "/",
-                    "/data/data/" + context.PackageName + "/",
-                    string.IsNullOrEmpty(info.DeviceProtectedDataDir) ? null : info.DeviceProtectedDataDir + "/",
-                }
-                .Where(dir => dir is not null)
-                .Select(dir => dir!)
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
+            var dirs = OwnFolders();
             var started = Stopwatch.StartNew();
             JsonObject native;
             try

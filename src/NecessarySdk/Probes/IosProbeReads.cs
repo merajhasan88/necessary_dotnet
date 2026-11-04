@@ -221,6 +221,33 @@ namespace Necessary
                 ? null
                 : "unreadable: " + got.ToString(CultureInfo.InvariantCulture) + " of " + wanted.ToString(CultureInfo.InvariantCulture) + " bytes read";
 
+        /// <summary>
+        /// The listed names in one loaded image's path, in any case. The app's own
+        /// bundle is read from the inside: its path and its main executable carry
+        /// the app's name, and neither names a tool. What the bundle holds beside
+        /// them is still read, so a library the app was rebuilt with is found by
+        /// its own name.
+        /// </summary>
+        public static IReadOnlyList<string> ImageTokens(
+            string path,
+            string bundlePath,
+            string? mainExecutable,
+            IReadOnlyList<string> tokens)
+        {
+            var name = path;
+            if (path.StartsWith(bundlePath, StringComparison.Ordinal))
+            {
+                name = path.Substring(bundlePath.Length).TrimStart('/');
+                if (name == mainExecutable)
+                {
+                    return Array.Empty<string>();
+                }
+            }
+
+            var lower = name.ToLowerInvariant();
+            return tokens.Where(token => lower.Contains(token, StringComparison.Ordinal)).ToList();
+        }
+
         /// <summary>An image's path in the bundle, as the report names it: at most 128 characters, its end kept; "(bundle)" for the bundle itself.</summary>
         public static string BundleLabel(string imagePath, string bundlePath)
         {

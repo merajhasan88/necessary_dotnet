@@ -19,9 +19,9 @@
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
 
     <PackageId>NecessarySdk</PackageId>
-    <Title>necessary: device trust for .NET apps on Android and iOS</Title>
-    <Description>Device trust for .NET apps on Android and iOS: a key the app never exports, signed measurements of the phone and of the app running on it, and a proof on each request -- and, if you turn them on, a second key the person unlocks to approve a request, and a PIN your backend checks. It never scores and never decides: your backend does.</Description>
-    <PackageTags>device-trust;security;android;ios;keystore;secure-enclave;request-signing;fraud</PackageTags>
+    <Title>necessary: device integrity for .NET apps on Android and iOS</Title>
+    <Description>Device integrity for .NET apps on Android and iOS: a key the app never exports, signed measurements of the phone and of the app running on it, and a proof on each request -- and, if you turn them on, a second key the person unlocks to approve a request, and a PIN your backend checks. It never scores and never decides: your backend does.</Description>
+    <PackageTags>device-integrity;security;android;ios;keystore;secure-enclave;request-signing;fraud</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://necessarysdk.com</PackageProjectUrl>

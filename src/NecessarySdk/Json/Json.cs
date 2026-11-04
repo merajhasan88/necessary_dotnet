@@ -6,6 +6,19 @@ namespace Necessary
     /// <summary>Typed reads of JSON nodes, as the plugin's Dart reads its maps.</summary>
     internal static class Json
     {
+        /// <summary>
+        /// The text <paramref name="field"/> of an answer your backend gave. A field
+        /// it left out is an <see cref="ApiException"/>, as every failure of a call
+        /// is, never a cast error.
+        /// </summary>
+        public static string AnswerText(JsonObject answer, string field)
+        {
+            var value = String(answer[field]);
+            return string.IsNullOrEmpty(value)
+                ? throw new ApiException("The backend answered no " + field + ".", code: "invalid_backend_answer")
+                : value!;
+        }
+
         /// <summary>The string a node holds, or null.</summary>
         public static string? String(JsonNode? node)
         {

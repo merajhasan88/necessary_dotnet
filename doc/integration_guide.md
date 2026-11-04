@@ -1,6 +1,6 @@
 # Necessary — what the app sends, and how your backend checks it
 
-The Necessary plugins (Android, iOS, React Native, .NET) are open source. They give your app
+The Necessary plugins for Android and iOS apps are open source. They give your app
 a key they never export (section 1 says where the phone keeps it), measurements of the phone and of the
 app running on it, and — if
 you turn them on — a second key that the person must unlock, and a PIN your backend checks, to approve
@@ -117,8 +117,8 @@ so that you need not store it. The app answers with `installation_id`, `challeng
 | `optional_probes` | the personal measurements you ask for, answered only where the app enables them (section 8) |
 | `expires_at` | 60 seconds ahead |
 
-Ask for every measurement you rely on every time, and vary the others from scan to scan, so that a
-tampered app cannot prepare its answers. **Rely on every measurement that would catch tampering** — the
+Ask for every measurement you need every time, and vary the others from scan to scan, so that a
+tampered app cannot prepare its answers. **Use every measurement that would catch tampering** — the
 hooks, gadgets and changes to the app's code in memory among them: on Android `runtime_maps`,
 `frida_ports`, `instrumentation_threads`, `exec_mappings` and `code_integrity`; on iOS `dyld_images`,
 `environment` and `code_integrity`. One left to chance is one a tampered app waits out, scanning again
@@ -629,9 +629,15 @@ normal looks like.
 3. **The memory around it** (`exec_mappings`, on Android). Code loaded at run time needs executable
    memory: memory both writable and executable (`wx_bytes`, `wx_size_classes`, `wx_largest_bytes`) and
    executable regions with no file behind them (`anon_exec_unlabeled_bytes`). Some runtimes compile
-   code as they run and map some of each — in amounts and sizes your own release runs show. Record the
-   most of each your release maps, per OS version, processor and page size; **more than your app ever
-   maps, or in sizes it never uses, is code in it that you did not ship.**
+   code as they run — each method the first time it is called — and map some of each. Such a runtime
+   shows itself by how it grows: it maps more as more of the app is used, keeps it
+   while the app runs, and maps it in blocks of one size (64 KiB on the phones measured; your own runs
+   show yours). Record the most of each your release maps, per OS version, processor and page size,
+   **over whole sessions through your app's main features, not at a cold start** — or a genuine
+   customer who signs in and approves a request maps more than your record. **More than your app ever
+   maps, or a size that is not a whole number of its runtime's blocks, is code in it that you did not
+   ship.** That tells a runtime's own code from a tool's; it does not prove a hook absent — one can
+   allocate in the same blocks — so the code comparison above is the stronger evidence.
 
 Compare a phone with itself too: the same installation reporting other hashes without an update, or an
 older build than before, is an app that changed under it.

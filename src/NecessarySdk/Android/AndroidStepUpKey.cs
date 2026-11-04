@@ -327,16 +327,25 @@ namespace Necessary
                 new PromptCallback(
                     result =>
                     {
-                        var authorised = result?.CryptoObject?.Signature ?? signer;
+                        // Any failure here is told, a keystore's ProviderException
+                        // among them: unanswered, this runs on the main thread, and
+                        // an exception would end the app with the approval waiting.
+                        string signature;
                         try
                         {
+                            var authorised = result?.CryptoObject?.Signature ?? signer;
                             authorised.Update(payload);
-                            done.TrySetResult(Wire.Base64UrlNoPadding(authorised.Sign()!));
+                            signature = Wire.Base64UrlNoPadding(authorised.Sign()!);
                         }
-                        catch (GeneralSecurityException error)
+#pragma warning disable CA1031 // Told to the app, whatever it was.
+                        catch (Exception error)
+#pragma warning restore CA1031
                         {
                             done.TrySetException(SigningFailed(error));
+                            return;
                         }
+
+                        done.TrySetResult(signature);
                     },
                     (code, text) => done.TrySetException(PromptError(code, text))));
         }
@@ -444,13 +453,17 @@ namespace Necessary
 
         private void SignAndReport(KeyStoreType.PrivateKeyEntry entry, byte[] payload, TaskCompletionSource<string> done)
         {
+            // After the person answered, on the main thread or on no thread that
+            // anything watches: every failure is told, as in AuthenticateOperation.
+            string signature;
             try
             {
-                done.TrySetResult(SignNow(entry, payload));
+                signature = SignNow(entry, payload);
             }
             catch (KeyPermanentlyInvalidatedException error)
             {
                 done.TrySetException(DiscardDeadKey(error));
+                return;
             }
             catch (UserNotAuthenticatedException error)
             {
@@ -458,11 +471,17 @@ namespace Necessary
                     "STEPUP_AUTH_FAILED",
                     "The keystore did not accept the authentication for the step-up key.",
                     error));
+                return;
             }
-            catch (GeneralSecurityException error)
+#pragma warning disable CA1031 // Told to the app, whatever it was.
+            catch (Exception error)
+#pragma warning restore CA1031
             {
                 done.TrySetException(SigningFailed(error));
+                return;
             }
+
+            done.TrySetResult(signature);
         }
 
         /// <summary>

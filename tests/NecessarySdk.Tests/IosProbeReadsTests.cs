@@ -49,6 +49,24 @@ namespace Necessary.Tests
         }
 
         [Fact]
+        public void The_apps_own_names_are_no_tools()
+        {
+            var tokens = new[] { "tool", "gadget", "flex" };
+            const string bundle = "/private/var/containers/Bundle/Application/A1B2/Toolbox.app";
+            IReadOnlyList<string> Named(string path) => ImageTokens(path, bundle, "Toolbox", tokens);
+            Assert.Empty(Named(bundle + "/Toolbox"));
+            Assert.Empty(Named(bundle + "/Frameworks/Engine.framework/Engine"));
+
+            // A library the app was rebuilt with is found by its own name, and an
+            // image outside the bundle is read whole.
+            Assert.Equal(new[] { "tool", "gadget" }, Named(bundle + "/Frameworks/ToolGadget.dylib"));
+            Assert.Equal(new[] { "flex" }, Named("/usr/lib/libFLEX.dylib"));
+
+            // With no main executable to tell by, the name is read.
+            Assert.Equal(new[] { "tool" }, ImageTokens(bundle + "/Toolbox", bundle, null, tokens));
+        }
+
+        [Fact]
         public void Every_image_compared_the_main_executable_among_them_is_complete()
         {
             var r = AppCoverage(new[] { Main, Engine, App }, 435);

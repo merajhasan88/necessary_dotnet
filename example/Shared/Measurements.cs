@@ -60,6 +60,7 @@ namespace Necessary.Example
             new MeasurementInfo("emulator", "Emulator", "Build values typical of an emulator.", MeasurementGroup.System),
             new MeasurementInfo("device", "Device", "The OS version, security patch level, model, build, the app's ABI and memory page size.", MeasurementGroup.Device),
             new MeasurementInfo("network", "Network", "A VPN up on any network; an HTTP proxy set.", MeasurementGroup.Device),
+            new MeasurementInfo("runtime", "Runtime", "The .NET runtime the app shipped with, and the Brotli decoder it carries.", MeasurementGroup.App),
         };
 
         public static readonly IReadOnlyList<MeasurementInfo> Ios = new[]
@@ -75,6 +76,7 @@ namespace Necessary.Example
             new MeasurementInfo("simulator", "Simulator", "The simulator, and the hardware model.", MeasurementGroup.System),
             new MeasurementInfo("device", "Device", "The OS version and build, the model and the memory page size.", MeasurementGroup.Device),
             new MeasurementInfo("network", "Network", "A VPN, inferred from the interfaces the proxy settings are scoped to; an HTTP proxy.", MeasurementGroup.Device),
+            new MeasurementInfo("runtime", "Runtime", "The .NET runtime the app shipped with, and the Brotli decoder it carries.", MeasurementGroup.App),
         };
 
         /// <summary>The personal measurements, in the order of <see cref="PersonalMeasurement"/>.</summary>

@@ -383,6 +383,21 @@ not all of them.
 | `transports` | list |  | what carries the default network: `wifi`, `cellular`, `ethernet`, `vpn` |
 | `interfaces` | list |  | the names of the network interfaces that are up, loopback left out — `wlan0`, `rmnet0`, `tun0` — at most 32 |
 
+### `runtime`
+
+The .NET runtime the app shipped with, and the Brotli decoder it carries. A flaw in either is fixed by
+rebuilding the app, not by updating the phone, so compare these with the versions the flaw was fixed in
+and decide what an older release may still do. A version says what the app was built with; it does not
+say the app was attacked.
+
+**When:** every scan, whether or not your backend asks, from collector 12.
+
+| Field | Type | Needed | Meaning |
+|---|---|---|---|
+| `runtime_version` | text | yes | the .NET runtime's version, for example `9.0.22` |
+| `brotli_decoder_present` | true/false | yes | the app carries .NET's Brotli decoder |
+| `brotli_decoder_version` | text |  | the decoder's own version, for example `1.1.1`; left out when the app carries none |
+
 ### `local_addresses`
 
 The phone's own IP addresses, per network interface. Loopback and link-local addresses are left out: a
@@ -607,7 +622,8 @@ Whether the app runs in the iOS Simulator, and the hardware model.
 ### `code_integrity`
 
 The app's own code compared in memory with its files, image by image: every image the loader mapped from
-the app — the main executable and its frameworks — has its `__text` compared. iOS keeps its system
+the app — the main executable and its frameworks — has its `__text` compared, and its `__managedcode`,
+where an app built with NativeAOT keeps its .NET code. iOS keeps its system
 libraries in a shared cache that no app can read, so only the app's own code can be compared: the system
 figures are always 0 — not measured, never clean — and `system_images_unreadable` counts those
 libraries. Each app image is compared, unreadable (its file could not be read in full) or skipped (no
@@ -634,7 +650,7 @@ only when you asked for it.
 | `app_images_compared` | integer, count | when checked | of those, the images compared |
 | `app_images_unreadable` | integer, count | when checked | the images whose file could not be read in full |
 | `app_images_skipped` | integer, count | when checked | the images skipped |
-| `app_expected_bytes` | integer, bytes | when checked | the `__text` bytes of the app's images |
+| `app_expected_bytes` | integer, bytes | when checked | the `__text` and `__managedcode` bytes of the app's images |
 | `app_unreadable_bytes` | integer, bytes | when checked | those of the unreadable images |
 | `app_skipped_bytes` | integer, bytes | when checked | those of the skipped images |
 | `app_complete` | true/false | when checked | every app image was compared |
@@ -650,7 +666,7 @@ only when you asked for it.
 | `ext_diff_bytes` | integer |  | always 0, likewise |
 | `ext_libs_diff` | integer |  | always 0, likewise |
 | `system_bucket_reason` | text |  | why the system figures are 0: `dyld_shared_cache_has_no_backing_files` |
-| `app_segment_compared_bytes` | integer, bytes |  | the whole `__TEXT` segments compared, beyond `__text`, in bytes: telemetry |
+| `app_segment_compared_bytes` | integer, bytes |  | the whole `__TEXT` segments compared, beyond that code, in bytes: telemetry |
 | `app_segment_diff_bytes` | integer, bytes |  | bytes that differ across those segments: telemetry |
 
 ### `device`
@@ -682,6 +698,23 @@ whether an app's own requests follow it depends on how the app makes them.
 | `vpn_active` | true/false | yes | an interface the proxy settings are scoped to is a VPN's kind |
 | `http_proxy_configured` | true/false |  | an HTTP, HTTPS or automatic proxy is set |
 | `scoped_interfaces` | list |  | the interfaces the proxy settings are scoped to, sorted, at most 32 — `en0` Wi-Fi, `pdp_ip0` cellular, `utun3` a tunnel |
+
+### `runtime`
+
+The .NET runtime the app shipped with, and the Brotli decoder it carries. A flaw in either is fixed by
+rebuilding the app, not by updating the phone, so compare these with the versions the flaw was fixed in
+and decide what an older release may still do. A version says what the app was built with; it does not
+say the app was attacked. A build keeps the decoder only in an app that uses it. It seldom keeps the
+decoder's own version: `unread` then names `brotli_decoder_version`, and `runtime_version` tells you the
+same thing.
+
+**When:** every scan, whether or not your backend asks, from collector 9.
+
+| Field | Type | Needed | Meaning |
+|---|---|---|---|
+| `runtime_version` | text | yes | the .NET runtime's version, for example `9.0.22` |
+| `brotli_decoder_present` | true/false | yes | the app carries .NET's Brotli decoder |
+| `brotli_decoder_version` | text |  | the decoder's own version, for example `1.1.1`; left out when the app carries none |
 
 ### `local_addresses`
 

@@ -31,11 +31,12 @@ namespace Necessary
         // screen capture, location and mock locations, and the OS build; 5
         // reports the app's code coverage image by image, and one location read
         // answers both location measurements; 6 sends the page size with device,
-        // and asks screen capture of the screen showing the app.
-        private const int CollectorVersion = 8;
+        // and asks screen capture of the screen showing the app; 9 adds the
+        // runtime measurement, volunteered on every scan.
+        private const int CollectorVersion = 9;
         private const int MaxTextLength = 8192;
 
-        private static readonly string[] VolunteeredProbes = { "device", "network" };
+        private static readonly string[] VolunteeredProbes = { "device", "network", "runtime" };
 
         private static readonly HashSet<string> OptionalMeasurements = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -186,6 +187,7 @@ namespace Necessary
             "code_integrity" => ProbeCodeIntegrity(),
             "device" => ProbeDevice(),
             "network" => ProbeNetwork(),
+            "runtime" => ProbeRuntime(),
 
             // Asked for by the backend, declined by this app.
             "local_addresses" => enabled.Contains(name) ? ProbeLocalAddresses() : NotEnabled(),
@@ -314,6 +316,9 @@ namespace Necessary
             }
         }
 
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate uint DecoderVersionFunction();
+
         private sealed class PermissionDelegate : CLLocationManagerDelegate
         {
             private readonly AppleIntegrityCollector owner;
@@ -340,6 +345,12 @@ namespace Necessary
         private static class Native
         {
             private const string LibSystem = "/usr/lib/libSystem.dylib";
+
+            /// <summary>RTLD_DEFAULT: every image the process has loaded.</summary>
+            public static readonly IntPtr DefaultSearch = new IntPtr(-2);
+
+            [DllImport(LibSystem)]
+            public static extern IntPtr dlsym(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string symbol);
 
             [DllImport(LibSystem)]
             public static extern int getpagesize();

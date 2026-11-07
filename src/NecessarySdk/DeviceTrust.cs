@@ -859,10 +859,10 @@ namespace Necessary
             var enabledList = new JsonArray();
             foreach (var name in enabled)
             {
-                enabledList.Add(name);
+                enabledList.Add((JsonNode?)name);
             }
 
-            var kind = DartJson.Encode(new JsonArray { accountSession, operation?.DeepClone(), enabledList });
+            var kind = DartJson.Encode(new JsonArray(JsonValue.Create(accountSession), operation?.DeepClone(), enabledList));
             if (scanning.TryGetValue(kind, out var running))
             {
                 return running;

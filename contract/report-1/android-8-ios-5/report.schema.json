@@ -1240,6 +1240,54 @@
         "vpn_active"
       ]
     },
+    "android.runtime": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "additionalProperties": true,
+      "description": "the .NET runtime the app shipped with, and the Brotli decoder it carries",
+      "x-answered": "volunteered on every scan",
+      "x-parts": [
+        "runtime_version",
+        "brotli_decoder_present"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "error",
+            "unsupported",
+            "not_enabled"
+          ]
+        },
+        "error": {
+          "type": "string",
+          "description": "why the probe could not measure"
+        },
+        "error_type": {
+          "description": "the failure's kind (Android)"
+        },
+        "reason": {
+          "description": "why the probe is unsupported here"
+        },
+        "unread": {
+          "$ref": "#/$defs/unread"
+        },
+        "runtime_version": {
+          "type": "string",
+          "description": "the .NET runtime's version"
+        },
+        "brotli_decoder_present": {
+          "type": "boolean",
+          "description": "whether the app carries .NET's Brotli decoder"
+        },
+        "brotli_decoder_version": {
+          "type": "string",
+          "description": "the decoder's own version; left out when the app carries none, and in unread when it could not be read"
+        }
+      }
+    },
     "android.local_addresses": {
       "type": "object",
       "required": [
@@ -1702,6 +1750,9 @@
         },
         "network": {
           "$ref": "#/$defs/android.network"
+        },
+        "runtime": {
+          "$ref": "#/$defs/android.runtime"
         },
         "local_addresses": {
           "$ref": "#/$defs/android.local_addresses"
@@ -2342,6 +2393,54 @@
         "vpn_active"
       ]
     },
+    "ios.runtime": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "additionalProperties": true,
+      "description": "the .NET runtime the app shipped with, and the Brotli decoder it carries",
+      "x-answered": "volunteered on every scan",
+      "x-parts": [
+        "runtime_version",
+        "brotli_decoder_present"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "error",
+            "unsupported",
+            "not_enabled"
+          ]
+        },
+        "error": {
+          "type": "string",
+          "description": "why the probe could not measure"
+        },
+        "error_type": {
+          "description": "the failure's kind (Android)"
+        },
+        "reason": {
+          "description": "why the probe is unsupported here"
+        },
+        "unread": {
+          "$ref": "#/$defs/unread"
+        },
+        "runtime_version": {
+          "type": "string",
+          "description": "the .NET runtime's version"
+        },
+        "brotli_decoder_present": {
+          "type": "boolean",
+          "description": "whether the app carries .NET's Brotli decoder"
+        },
+        "brotli_decoder_version": {
+          "type": "string",
+          "description": "the decoder's own version; left out when the app carries none, and in unread when it could not be read"
+        }
+      }
+    },
     "ios.local_addresses": {
       "type": "object",
       "required": [
@@ -2723,6 +2822,9 @@
         },
         "network": {
           "$ref": "#/$defs/ios.network"
+        },
+        "runtime": {
+          "$ref": "#/$defs/ios.runtime"
         },
         "local_addresses": {
           "$ref": "#/$defs/ios.local_addresses"

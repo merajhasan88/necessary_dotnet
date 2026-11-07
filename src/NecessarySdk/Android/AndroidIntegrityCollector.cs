@@ -43,7 +43,8 @@ namespace Necessary
         //     error, or names the parts it could not read in "unread". One
         //     location read answers both location measurements, which carry its
         //     fix_time.
-        private const int CollectorVersion = 11;
+        // 12 = the runtime measurement, volunteered on every scan.
+        private const int CollectorVersion = 12;
 
         // Apps listed per capability, at most.
         private const int MaxApps = 32;
@@ -54,7 +55,7 @@ namespace Necessary
         private const int CommandTimeoutMs = 3000;
 
         // Sent with every scan whether or not the backend asked.
-        private static readonly string[] VolunteeredProbes = { "device", "network" };
+        private static readonly string[] VolunteeredProbes = { "device", "network", "runtime" };
 
         // The optional measurements this collector knows. Each is collected only
         // when the backend asks for it AND the app enabled it.
@@ -370,6 +371,7 @@ namespace Necessary
                     "code_integrity" => ProbeCodeIntegrity(),
                     "device" => ProbeDevice(),
                     "network" => ProbeNetwork(),
+                    "runtime" => ProbeRuntime(),
                     "local_addresses" => enabled.Contains(probe) ? ProbeLocalAddresses() : NotEnabled(),
                     "accessibility" => enabled.Contains(probe) ? ProbeAccessibility() : NotEnabled(),
                     "notification_access" => enabled.Contains(probe) ? ProbeNotificationAccess() : NotEnabled(),

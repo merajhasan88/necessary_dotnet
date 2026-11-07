@@ -20,18 +20,24 @@ namespace Necessary
         /// <summary>Images not compared that are named, at most.</summary>
         public const int MaxNamedImages = 64;
 
+        /// <summary>The section beside __text where an app built with NativeAOT keeps its .NET code.</summary>
+        public const string ManagedCodeSection = "__managedcode";
+
         /// <summary>
         /// The __text section of a __TEXT segment, or why it cannot be compared.
         /// The section is checked before the segment's budget is applied, so an
         /// image over the budget is skipped with its size rather than dropped
         /// unseen; the header's unsigned values are checked before any becomes an
-        /// int. <paramref name="section"/> is null when the segment names no __text.
+        /// int. <paramref name="section"/> is null when the segment names no __text;
+        /// <paramref name="managed"/> is the segment's __managedcode, which counts as
+        /// code beside it, or null.
         /// </summary>
         public static (TextSpan? Span, CoverageProblem? Problem) TextSpanOf(
             ulong segmentFileOffset,
             ulong segmentFileSize,
             ulong segmentVMAddress,
-            (ulong Offset, ulong Size)? section)
+            (ulong Offset, ulong Size)? section,
+            (ulong Offset, ulong Size)? managed = null)
         {
             if (section is not { } text)
             {
@@ -49,11 +55,23 @@ namespace Necessary
                 return (null, new CoverageProblem("__text lies outside its __TEXT segment", 0));
             }
 
+            ulong managedOffset = 0, managedSize = 0;
+            if (managed is { Size: > 0 } code)
+            {
+                if (code.Offset < segmentFileOffset || code.Size > segmentFileSize || code.Offset - segmentFileOffset > segmentFileSize - code.Size)
+                {
+                    return (null, new CoverageProblem(ManagedCodeSection + " lies outside its __TEXT segment", 0));
+                }
+
+                managedOffset = code.Offset - segmentFileOffset;
+                managedSize = code.Size;
+            }
+
             if (segmentFileSize > MaxTextSegment)
             {
                 return (null, new CoverageProblem(
                     "__TEXT of " + segmentFileSize.ToString(CultureInfo.InvariantCulture) + " bytes is over the 64 MiB budget",
-                    size <= 1UL << 40 ? (long)size : 0));
+                    size <= 1UL << 40 && managedSize <= 1UL << 40 ? (long)(size + managedSize) : 0));
             }
 
             return (new TextSpan(
@@ -61,7 +79,35 @@ namespace Necessary
                 (long)segmentFileSize,
                 segmentVMAddress,
                 (long)(text.Offset - segmentFileOffset),
-                (long)size), null);
+                (long)size,
+                (long)managedOffset,
+                (long)managedSize), null);
+        }
+
+        /// <summary>
+        /// How many bytes of a __TEXT segment differ between memory and its file:
+        /// those in the app's code, __text and __managedcode, and those anywhere in
+        /// the segment.
+        /// </summary>
+        public static (long Code, long Segment) Differing(byte[] memory, byte[] onDisk, TextSpan span)
+        {
+            long code = 0, segment = 0;
+            var textEnd = span.TextOffsetInSegment + span.TextSize;
+            var managedEnd = span.ManagedOffsetInSegment + span.ManagedSize;
+            for (var offset = 0; offset < onDisk.Length; offset++)
+            {
+                if (memory[offset] != onDisk[offset])
+                {
+                    segment++;
+                    if ((offset >= span.TextOffsetInSegment && offset < textEnd)
+                        || (offset >= span.ManagedOffsetInSegment && offset < managedEnd))
+                    {
+                        code++;
+                    }
+                }
+            }
+
+            return (code, segment);
         }
 
         /// <summary>
@@ -81,16 +127,17 @@ namespace Necessary
                 return null;
             }
 
-            var textStart = (ulong)span.SegmentFileOffset + (ulong)span.TextOffsetInSegment;
-            var textEnd = textStart + (ulong)span.TextSize;
             var cryptStart = (ulong)cryptOffset;
             var cryptEnd = cryptStart + cryptSize;
-            if (cryptStart >= textEnd || textStart >= cryptEnd)
+            bool Encrypted(long offsetInSegment, long size)
             {
-                return null;
+                var start = (ulong)span.SegmentFileOffset + (ulong)offsetInSegment;
+                return size > 0 && cryptStart < start + (ulong)size && start < cryptEnd;
             }
 
-            return new CoverageProblem("encrypted on disk (App Store): its code cannot be compared with its file", span.TextSize);
+            return Encrypted(span.TextOffsetInSegment, span.TextSize) || Encrypted(span.ManagedOffsetInSegment, span.ManagedSize)
+                ? new CoverageProblem("encrypted on disk (App Store): its code cannot be compared with its file", span.CodeSize)
+                : null;
         }
 
         /// <summary>
@@ -439,7 +486,13 @@ namespace Necessary
             long SegmentSize,
             ulong SegmentVMAddress,
             long TextOffsetInSegment,
-            long TextSize);
+            long TextSize,
+            long ManagedOffsetInSegment = 0,
+            long ManagedSize = 0)
+        {
+            /// <summary>The app's code in the segment: __text, and __managedcode where there is one.</summary>
+            public long CodeSize => TextSize + ManagedSize;
+        }
 
         /// <summary>Why one app image's __text was not compared, and how many __text bytes that leaves out: 0 when its size could not be read.</summary>
         internal sealed record CoverageProblem(string Reason, long TextSize);

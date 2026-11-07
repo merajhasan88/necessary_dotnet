@@ -49,6 +49,54 @@ namespace Necessary.Tests
         }
 
         [Fact]
+        public void Managed_code_beside_text_counts_as_code()
+        {
+            var (span, problem) = TextSpanOf(0, 0x10000, 0x1000, (0x1000, 0x100), (0x2000, 0x300));
+            Assert.Null(problem);
+            Assert.Equal(0x400, span!.CodeSize);
+            Assert.Equal(0x2000, span.ManagedOffsetInSegment);
+            Assert.Equal(0x100, TextSpanOf(0, 0x10000, 0x1000, (0x1000, 0x100)).Span!.CodeSize);
+            Assert.Equal(0x100, TextSpanOf(0, 0x10000, 0x1000, (0x1000, 0x100), (0x2000, 0)).Span!.CodeSize);
+            Assert.Equal(
+                new CoverageProblem("__managedcode lies outside its __TEXT segment", 0),
+                TextSpanOf(0, 0x10000, 0, (0x1000, 0x100), (0xFF00, 0x200)).Problem);
+            Assert.Equal(0x600, TextSpanOf(0, 70_000_000, 0, (0x1000, 0x200), (0x2000, 0x400)).Problem!.TextSize);
+        }
+
+        [Fact]
+        public void A_byte_changed_in_managed_code_counts_as_code_one_elsewhere_only_in_the_segment()
+        {
+            var span = TextSpanOf(0, 0x40, 0, (0x10, 0x8), (0x20, 0x8)).Span!;
+            var onDisk = new byte[0x40];
+            byte[] Changed(params int[] offsets)
+            {
+                var memory = (byte[])onDisk.Clone();
+                foreach (var offset in offsets)
+                {
+                    memory[offset] = 0xFF;
+                }
+
+                return memory;
+            }
+
+            Assert.Equal((0, 0), Differing(Changed(), onDisk, span));
+            Assert.Equal((1, 1), Differing(Changed(0x10), onDisk, span));
+            Assert.Equal((1, 1), Differing(Changed(0x27), onDisk, span));
+            Assert.Equal((0, 1), Differing(Changed(0x18), onDisk, span));
+            Assert.Equal((0, 1), Differing(Changed(0x28), onDisk, span));
+            Assert.Equal((2, 3), Differing(Changed(0x17, 0x20, 0x00), onDisk, span));
+        }
+
+        [Fact]
+        public void Encryption_over_managed_code_alone_keeps_the_image_from_being_compared()
+        {
+            var span = TextSpanOf(0, 0x200000, 0x1_0000_0000, (0x4000, 0x1000), (0x100000, 0x1000)).Span!;
+            var encrypted = EncryptionProblem(0x80000, 0x90000, 1, span);
+            Assert.Equal(0x2000, encrypted!.TextSize);
+            Assert.Null(EncryptionProblem(0x80000, 0x1000, 1, span));
+        }
+
+        [Fact]
         public void The_apps_own_names_are_no_tools()
         {
             var tokens = new[] { "tool", "gadget", "flex" };

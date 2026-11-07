@@ -19,6 +19,31 @@ namespace Necessary
         /// are scoped to -- a heuristic, so their names are sent with it. Names
         /// only, never an address.
         /// </summary>
+        /// <summary>
+        /// The runtime this app shipped with and the Brotli decoder it carries: a
+        /// flaw in either is fixed by a rebuilt app, so a backend compares them with
+        /// the versions it was fixed in.
+        /// </summary>
+        /// <remarks>
+        /// A build keeps the decoder only in an app that uses it, linked into the main
+        /// executable, and its assembly in the bundle says so; a bundle without
+        /// assemblies does not show it. The decoder's version function is looked up,
+        /// never imported: an import would link the decoder into every app using this
+        /// package, and a build keeps the function only if something asks for it.
+        /// </remarks>
+        private static JsonObject ProbeRuntime()
+        {
+            var bundle = NSBundle.MainBundle.BundlePath;
+            bool? present = File.Exists(Path.Combine(bundle, "System.Private.CoreLib.dll"))
+                ? File.Exists(Path.Combine(bundle, "System.IO.Compression.Brotli.dll"))
+                : null;
+            var function = Native.dlsym(Native.DefaultSearch, RuntimeReads.DecoderVersionFunction);
+            uint? word = function == IntPtr.Zero
+                ? null
+                : Marshal.GetDelegateForFunctionPointer<DecoderVersionFunction>(function)();
+            return RuntimeReads.Runtime(Environment.Version, present, word);
+        }
+
         private static JsonObject ProbeNetwork()
         {
             var settings = CoreFoundation.CFNetwork.GetSystemProxySettings()?.Dictionary;
@@ -40,7 +65,7 @@ namespace Necessary
             var interfaces = new JsonArray();
             foreach (var name in scoped.Take(32))
             {
-                interfaces.Add(name);
+                interfaces.Add((JsonNode?)name);
             }
 
             return new JsonObject
@@ -118,7 +143,7 @@ namespace Necessary
                         break;
                     }
 
-                    addresses.Add(new JsonObject
+                    addresses.Add((JsonNode)new JsonObject
                     {
                         ["interface"] = Marshal.PtrToStringUTF8(namePointer) ?? string.Empty,
                         ["address"] = text,
@@ -190,8 +215,9 @@ namespace Necessary
         private static JsonObject ProbeCodeSigning() => MachOSigning.CodeSigning(ReadExecutable());
 
         /// <summary>
-        /// Each bundle image's __TEXT,__text in memory against the same bytes on
-        /// disk. Only the app's own code can be compared on iOS: the system
+        /// Each bundle image's code, __TEXT,__text and any __TEXT,__managedcode, in
+        /// memory against the same bytes on disk. Only the app's own code can be
+        /// compared on iOS: the system
         /// libraries live in the dyld shared cache, with no file to open, so they
         /// are counted as unreadable -- never as clean.
         /// </summary>
@@ -267,12 +293,12 @@ namespace Necessary
             var (head, headProblem) = ReadFileRange(path, 0, 4096);
             if (head is null)
             {
-                return ImageOutcome.Unreadable(span.TextSize, headProblem!);
+                return ImageOutcome.Unreadable(span.CodeSize, headProblem!);
             }
 
             if (Arm64Slice(head) is not { } slice)
             {
-                return ImageOutcome.Unreadable(span.TextSize, "neither a 64-bit Mach-O file nor a universal one with an arm64 image");
+                return ImageOutcome.Unreadable(span.CodeSize, "neither a 64-bit Mach-O file nor a universal one with an arm64 image");
             }
 
             // The file must be the build that is running (collector 8): an app
@@ -283,7 +309,7 @@ namespace Necessary
             if (uuid is not null)
             {
                 var (fileHeader, _) = ReadFileRange(path, slice, 32 + commandsSize);
-                if (fileHeader is not null && BuildProblem(uuid, MachOUuid(fileHeader), span.TextSize) is { } other)
+                if (fileHeader is not null && BuildProblem(uuid, MachOUuid(fileHeader), span.CodeSize) is { } other)
                 {
                     return ImageOutcome.Skipped(other.TextSize, other.Reason);
                 }
@@ -293,41 +319,26 @@ namespace Necessary
             if (onDisk is null)
             {
                 // A bundle image that cannot be read is not clean.
-                return ImageOutcome.Unreadable(span.TextSize, readProblem!);
+                return ImageOutcome.Unreadable(span.CodeSize, readProblem!);
             }
 
             var live = unchecked((nint)(span.SegmentVMAddress + (ulong)(long)slide));
             if (live == 0)
             {
-                return ImageOutcome.Skipped(span.TextSize, "no live address for __TEXT");
+                return ImageOutcome.Skipped(span.CodeSize, "no live address for __TEXT");
             }
 
             // One pass over the whole __TEXT segment, each differing byte
-            // attributed to __text or to the rest: __text is what counts; the rest
-            // is telemetry with no clean baseline yet.
+            // attributed to the app's code or to the rest: the code is what counts;
+            // the rest is telemetry with no clean baseline yet.
             var memory = new byte[onDisk.Length];
             Marshal.Copy(live, memory, 0, memory.Length);
-            long textDiffering = 0;
-            long segmentDiffering = 0;
-            var textStart = span.TextOffsetInSegment;
-            var textEnd = textStart + span.TextSize;
-            for (var offset = 0; offset < onDisk.Length; offset++)
-            {
-                if (memory[offset] != onDisk[offset])
-                {
-                    segmentDiffering++;
-                    if (offset >= textStart && offset < textEnd)
-                    {
-                        textDiffering++;
-                    }
-                }
-            }
-
-            return ImageOutcome.Compared(span.TextSize, textDiffering, onDisk.Length, segmentDiffering);
+            var (codeDiffering, segmentDiffering) = Differing(memory, onDisk, span);
+            return ImageOutcome.Compared(span.CodeSize, codeDiffering, onDisk.Length, segmentDiffering);
         }
 
         /// <summary>
-        /// The __TEXT segment and its __text section, read from an image's load
+        /// The __TEXT segment and its code sections, read from an image's load
         /// commands in memory, its encryption and its LC_UUID as loaded. Every
         /// command is read: LC_ENCRYPTION_INFO_64 follows the segments, so stopping
         /// at __TEXT would never see it (collector 7); the LC_UUID is for the build
@@ -363,20 +374,25 @@ namespace Necessary
                     var filesize = (ulong)Marshal.ReadInt64(cursor, 48);
                     var sections = (uint)Marshal.ReadInt32(cursor, 64);
                     (ulong Offset, ulong Size)? text = null;
+                    (ulong Offset, ulong Size)? managed = null;
                     var section = cursor + SegmentCommandSize;
                     for (uint s = 0; s < sections; s++)
                     {
-                        if (FixedName(section) == "__text")
+                        // section_64: sectname[16], segname[16], addr, size, offset ...
+                        var name = FixedName(section);
+                        if (name == "__text")
                         {
-                            // section_64: sectname[16], segname[16], addr, size, offset ...
                             text = ((uint)Marshal.ReadInt32(section, 48), (ulong)Marshal.ReadInt64(section, 40));
-                            break;
+                        }
+                        else if (name == ManagedCodeSection)
+                        {
+                            managed = ((uint)Marshal.ReadInt32(section, 48), (ulong)Marshal.ReadInt64(section, 40));
                         }
 
                         section += SectionSize;
                     }
 
-                    found = TextSpanOf(fileoff, filesize, vmaddr, text);
+                    found = TextSpanOf(fileoff, filesize, vmaddr, text, managed);
                 }
                 else if (command == LcEncryptionInfo64)
                 {
@@ -518,7 +534,7 @@ namespace Necessary
                 // which is indistinguishable from absent: a safe false negative.
                 if (NSFileManager.DefaultManager.FileExists(path))
                 {
-                    found.Add(path);
+                    found.Add((JsonNode?)path);
                 }
             }
 
@@ -579,7 +595,7 @@ namespace Necessary
             var list = new JsonArray();
             foreach (var token in tokens)
             {
-                list.Add(token);
+                list.Add((JsonNode?)token);
             }
 
             var result = new JsonObject

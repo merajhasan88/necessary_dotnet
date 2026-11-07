@@ -313,7 +313,7 @@ namespace Necessary
             var files = new JsonArray();
             foreach (var name in listed.Take(OutsideNames))
             {
-                files.Add(name);
+                files.Add((JsonNode?)name);
             }
 
             return new JsonObject

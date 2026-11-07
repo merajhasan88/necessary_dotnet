@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using Android.AccessibilityServices;
 using Android.App.Admin;
@@ -52,6 +53,32 @@ namespace Necessary
         /// network is asked, not only the default one. Interface names only --
         /// never an address.
         /// </summary>
+        /// <summary>
+        /// The runtime this app shipped with and the Brotli decoder it carries, in
+        /// .NET's own library: a flaw in either is fixed by a rebuilt app, so a
+        /// backend compares them with the versions it was fixed in.
+        /// </summary>
+        private static JsonObject ProbeRuntime()
+        {
+            bool? present;
+            uint? word = null;
+            try
+            {
+                word = NativeMethods.BrotliDecoderVersion();
+                present = true;
+            }
+            catch (DllNotFoundException)
+            {
+                present = false;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                present = true;
+            }
+
+            return RuntimeReads.Runtime(System.Environment.Version, present, word);
+        }
+
         private JsonObject ProbeNetwork()
         {
             if (context.GetSystemService(Context.ConnectivityService) is not ConnectivityManager manager)
@@ -507,6 +534,13 @@ namespace Necessary
                 fix.Provider ?? string.Empty,
                 fix.Time,
                 mock);
+        }
+
+        private static class NativeMethods
+        {
+            // .NET's own library, which every Android app ships as a file of its own.
+            [DllImport("libSystem.IO.Compression.Native", EntryPoint = RuntimeReads.DecoderVersionFunction)]
+            public static extern uint BrotliDecoderVersion();
         }
 
         private sealed class IntConsumer : Java.Lang.Object, Java.Util.Functions.IConsumer

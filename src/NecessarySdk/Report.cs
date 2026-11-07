@@ -230,7 +230,7 @@ namespace Necessary
             var enabled = new JsonArray();
             foreach (var name in enabledMeasurements)
             {
-                enabled.Add(name);
+                enabled.Add((JsonNode?)name);
             }
 
             var report = FitReport(new JsonObject

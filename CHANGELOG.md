@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.10
+
+- A new measurement, `runtime`, sent with every scan (Android collector 12, iOS collector 9): the .NET
+  runtime's version, whether the app carries a Brotli decoder, and that decoder's version where it can
+  be read. A backend compares them with the versions a flaw was fixed in.
+- iOS: `code_integrity` compares `__managedcode` beside `__text`: an app built with NativeAOT keeps its
+  .NET code there. Other apps have no such section, and their figures are as before.
+
 ## 0.1.9
 
 - `runtime_maps`, `instrumentation_threads` and iOS `dyld_images` leave the app's own folders, package

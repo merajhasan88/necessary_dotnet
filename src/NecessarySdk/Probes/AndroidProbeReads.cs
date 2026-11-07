@@ -353,7 +353,7 @@ namespace Necessary
             var listed = new JsonArray();
             foreach (var entry in sorted.Where(entry => !entry.Value.IsFailure).Take(MaxSplits))
             {
-                listed.Add(new JsonObject { ["name"] = Take(entry.Key, 128), ["sha256"] = entry.Value.Value });
+                listed.Add((JsonNode)new JsonObject { ["name"] = Take(entry.Key, 128), ["sha256"] = entry.Value.Value });
             }
 
             var unread = sorted.Where(entry => entry.Value.IsFailure)
@@ -641,7 +641,7 @@ namespace Necessary
                     var texts = new JsonArray();
                     foreach (var item in strings)
                     {
-                        texts.Add(item);
+                        texts.Add((JsonNode?)item);
                     }
 
                     return texts;
@@ -649,7 +649,7 @@ namespace Necessary
                     var numbers = new JsonArray();
                     foreach (var item in ints)
                     {
-                        numbers.Add(item);
+                        numbers.Add((JsonNode?)item);
                     }
 
                     return numbers;
@@ -657,7 +657,7 @@ namespace Necessary
                     var wide = new JsonArray();
                     foreach (var item in longs)
                     {
-                        wide.Add(item);
+                        wide.Add((JsonNode?)item);
                     }
 
                     return wide;

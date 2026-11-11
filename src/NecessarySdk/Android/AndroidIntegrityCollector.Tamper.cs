@@ -183,9 +183,38 @@ namespace Necessary
 #pragma warning restore CA1422
         }
 
-        private static JsonObject ProbeDebugState() => Ok(
-            ("debugger_connected", Android.OS.Debug.IsDebuggerConnected),
-            ("waiting_for_debugger", Android.OS.Debug.WaitingForDebugger()));
+        // The debugger thread (collector 13) as well: a release app on a system
+        // that is not debuggable never has one, whatever a debugger API answers.
+        private static JsonObject ProbeDebugState()
+        {
+            var (names, unreadable) = ThreadNames();
+            return DebugState(Android.OS.Debug.IsDebuggerConnected, Android.OS.Debug.WaitingForDebugger(), names, unreadable);
+        }
+
+        /// <summary>
+        /// Whether another app runs this one inside its own (collector 13): where
+        /// Android says the package file and data are, the user IDs, the libraries
+        /// a started process is made to load first, and other apps' code in memory.
+        /// </summary>
+        private JsonObject ProbeAppHost()
+        {
+            var info = context.ApplicationInfo!;
+            var uid = Android.OS.Process.MyUid();
+            return AppHost(
+                context.PackageName ?? string.Empty,
+                info.SourceDir,
+                info.DataDir,
+                uid,
+                info.Uid,
+                Outcome<IReadOnlyList<string>?>.Of(() => context.PackageManager!.GetPackagesForUid(uid)?.ToList()),
+                Outcome<IReadOnlyList<string>>.Of(() => File.ReadAllLines("/proc/self/maps")),
+
+                // What a process the app starts is made to load first: in the app's own
+                // environment, and as one started process sees it.
+                Outcome<string?>.Of(() => System.Environment.GetEnvironmentVariable("LD_PRELOAD")),
+                RunCommand("/system/bin/sh", "-c", "echo \"$LD_PRELOAD\""),
+                MaxApps);
+        }
 
         private static JsonObject ProbeRootFiles() => RootFiles(
             RootPaths.Select(path => new KeyValuePair<string, Outcome<bool>>(path, Outcome<bool>.Of(() => new Java.IO.File(path).Exists()))).ToList(),
@@ -318,7 +347,7 @@ namespace Necessary
             }
         }
 
-        private static JsonObject ProbeEmulator()
+        private JsonObject ProbeEmulator()
         {
             var reasons = new List<string>();
             static bool Has(string? value, string token) => value?.ToLowerInvariant().Contains(token, StringComparison.Ordinal) == true;
@@ -353,13 +382,31 @@ namespace Necessary
                 reasons.Add("board");
             }
 
-            return Ok(
+            // Collector 13: the processor and the form of the device, which an app
+            // that rewrites the build values does not change.
+            var pm = context.PackageManager;
+            var features = new HashSet<string>(
+                FormFactorFeatures.Where(feature => Outcome<bool>.Of(() => pm?.HasSystemFeature(feature) == true) is { IsFailure: false, Value: true }),
+                StringComparer.Ordinal);
+            var hardware = EmulatorHardwareOf(
+                Outcome<IReadOnlyList<string>>.Of(() => File.ReadAllLines("/proc/cpuinfo")),
+                (Build.SupportedAbis ?? (IList<string>)Array.Empty<string>()).ToList(),
+                Outcome<string?>.Of(() => Android.Systems.Os.Uname()?.Machine) is { IsFailure: false } machine ? machine.Value : null,
+                features);
+            reasons.AddRange(hardware.Reasons);
+            var result = Ok(
                 ("suspected", reasons.Count > 0),
                 ("reasons", reasons),
                 ("model", Build.Model),
                 ("manufacturer", Build.Manufacturer),
                 ("product", Build.Product),
                 ("hardware", Build.Hardware));
+            foreach (var field in hardware.Fields.ToList())
+            {
+                result[field.Key] = field.Value?.DeepClone();
+            }
+
+            return WithUnread(result, hardware.Unread);
         }
 
         // A setting that could not be read is unread, never "off".
@@ -391,9 +438,19 @@ namespace Necessary
             // corroborating rather than conclusive.
             var glibThreads = new[] { "gmain", "gdbus", "pool-spawner" };
 
-            // A running process always has threads; none enumerated means the
-            // probe saw nothing. A thread that ended between listing and reading
-            // is gone; one whose name could not be read is unread.
+            var (names, unreadable) = ThreadNames();
+            return Threads(names, unreadable, fridaThreads, glibThreads, SuspiciousRuntimeTokens, context.PackageName ?? string.Empty);
+        }
+
+        /// <summary>
+        /// This process's thread names, and how many could not be read. A running
+        /// process always has threads; none enumerated means nothing was seen, not
+        /// that nothing is there. A thread that ended between listing and reading is
+        /// gone; one whose name could not be read is unread -- a renamed
+        /// instrumentation thread could be that one.
+        /// </summary>
+        private static (List<string> Names, int Unreadable) ThreadNames()
+        {
             var names = new List<string>();
             var unreadable = 0;
             string[] tasks;
@@ -425,7 +482,7 @@ namespace Necessary
                 }
             }
 
-            return Threads(names, unreadable, fridaThreads, glibThreads, SuspiciousRuntimeTokens, context.PackageName ?? string.Empty);
+            return (names, unreadable);
         }
 
         /// <summary>The folders the app's own files live in: its install folder and its data folders.</summary>

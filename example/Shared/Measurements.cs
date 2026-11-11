@@ -49,7 +49,7 @@ namespace Necessary.Example
             new MeasurementInfo("exec_mappings", "Executable memory", "Memory both writable and executable, executable memory from deleted files, unlabelled executable regions: where injected code lives.", MeasurementGroup.Hooks),
             new MeasurementInfo("code_integrity", "Code integrity", "The app's native code and the system libraries in memory compared with their files: an inline hook changes bytes, and diff_bytes counts them.", MeasurementGroup.Hooks),
             new MeasurementInfo("tracer", "Tracer", "Another process tracing the app.", MeasurementGroup.Hooks),
-            new MeasurementInfo("debug_state", "Debugger", "A Java debugger attached or awaited.", MeasurementGroup.Hooks),
+            new MeasurementInfo("debug_state", "Debugger", "A Java debugger attached or awaited, and the runtime's debugger thread.", MeasurementGroup.Hooks),
             new MeasurementInfo("app_identity", "App identity", "The installed app: package, the base APK hash, signing certificates, flags, install source and split APKs.", MeasurementGroup.App),
             new MeasurementInfo("root_files", "Root files", "Known root, su and framework paths that exist; a test-keys build.", MeasurementGroup.System),
             new MeasurementInfo("root_shell", "Root shell", "Whether su resolves from the app's shell.", MeasurementGroup.System),
@@ -57,10 +57,11 @@ namespace Necessary.Example
             new MeasurementInfo("selinux", "SELinux", "The SELinux mode, read two ways.", MeasurementGroup.System),
             new MeasurementInfo("mounts", "Mounts", "System partitions mounted writable.", MeasurementGroup.System),
             new MeasurementInfo("developer_settings", "Developer settings", "Developer options and USB debugging.", MeasurementGroup.System),
-            new MeasurementInfo("emulator", "Emulator", "Build values typical of an emulator.", MeasurementGroup.System),
+            new MeasurementInfo("emulator", "Emulator", "Build values typical of an emulator, and the processor and the form of the device.", MeasurementGroup.System),
             new MeasurementInfo("device", "Device", "The OS version, security patch level, model, build, the app's ABI and memory page size.", MeasurementGroup.Device),
             new MeasurementInfo("network", "Network", "A VPN up on any network; an HTTP proxy set.", MeasurementGroup.Device),
             new MeasurementInfo("runtime", "Runtime", "The .NET runtime the app shipped with, and the Brotli decoder it carries.", MeasurementGroup.App),
+            new MeasurementInfo("app_host", "App host", "Whether Android runs the app itself, or another app runs it inside its own.", MeasurementGroup.App),
         };
 
         public static readonly IReadOnlyList<MeasurementInfo> Ios = new[]
@@ -85,7 +86,7 @@ namespace Necessary.Example
             new MeasurementInfo("local_addresses", "Local addresses", "The phone's own IP addresses, link-local ones left out.", MeasurementGroup.Personal),
             new MeasurementInfo("accessibility", "Accessibility", "The Accessibility services that are on, and the keyboard in use. Android only.", MeasurementGroup.Personal),
             new MeasurementInfo("notification_access", "Notification access", "The apps allowed to read notifications. Android only.", MeasurementGroup.Personal),
-            new MeasurementInfo("other_access", "Other access", "Device-administrator apps, and known remote-control apps installed. Android only.", MeasurementGroup.Personal),
+            new MeasurementInfo("other_access", "Other access", "Device-administrator apps, known remote-control apps installed, and the app that handles calls. Android only.", MeasurementGroup.Personal),
             new MeasurementInfo("screen_capture", "Screen capture", "The screen being recorded, mirrored or cast.", MeasurementGroup.Personal),
             new MeasurementInfo("location", "Location", "The last location the phone already knows: never a fresh fix, never a prompt. Needs the location permission.", MeasurementGroup.Personal),
             new MeasurementInfo("mock_location", "Mock location", "Whether that location was faked.", MeasurementGroup.Personal),

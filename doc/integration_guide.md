@@ -514,7 +514,8 @@ Each entry in `probe_results` has a `status`: `ok`, `error` (with `error`, and o
 `unsupported` (with `reason`), or `not_enabled` for a personal measurement this app does not collect.
 **A measurement counts only when its status is `ok` and its fields are there** — a status on its own is a
 claim. A field a plugin version does not know is absent; read absent as not measured. Besides what you
-ask for, every report carries `device` and `network`, and on iOS `code_integrity`.
+ask for, every report carries `device`, `network` and `runtime` (from `collector_version` 12 on Android,
+9 on iOS), on Android `app_host` (from `collector_version` 13), and on iOS `code_integrity`.
 
 **An `ok` probe may carry `unread`**: the parts it could not read, each with why —
 `{"adb_enabled": "SecurityException", "/sbin/su": "SecurityException"}`. An unread part is not
@@ -529,7 +530,7 @@ or keep their scans apart as older evidence.
 | Probe | What it tells you | Fields |
 |---|---|---|
 | `app_identity` | the installed app: package, the base APK's hash, the signing certificates, flags, install source; from version 8 the split APKs apart | `package_name`, `apk_sha256` (the base APK alone, never its splits), `cert_sha256` (list), `debuggable`, `allow_backup`, `version_name`, `version_code`, `installer_package`, `source_dir`, `current_signers`, `signing_lineage`, `split_apks` (each `name` and `sha256`, sorted by name; empty without splits) |
-| `debug_state` | a Java debugger attached or awaited | `debugger_connected`, `waiting_for_debugger` |
+| `debug_state` | a Java debugger attached or awaited, and the runtime's debugger thread | `debugger_connected`, `waiting_for_debugger`, `jdwp_thread` |
 | `tracer` | another process tracing the app | `tracer_pid`, `seccomp`, `no_new_privs` |
 | `root_files` | known root, su and framework paths that exist; a test-keys build | `found_paths`, `test_keys`, `build_tags` |
 | `root_shell` | whether `su` resolves from the app's shell | `su_found`, `su_path` |
@@ -542,9 +543,11 @@ or keep their scans apart as older evidence.
 | `exec_mappings` | memory both writable and executable, executable memory from deleted files, unlabelled executable regions | `wx_mappings`, `wx_bytes`, `wx_size_classes`, `wx_smallest_bytes`, `wx_largest_bytes`, `deleted_exec_mappings`, `deleted_exec_own_code`, `deleted_exec_jit`, `anon_exec_labeled`, `anon_exec_unlabeled`, `anon_exec_unlabeled_bytes`, `maps_lines`, `samples` |
 | `code_integrity` | the app's native code and system libraries in memory compared with their files — an inline hook changes bytes | `checked`, `diff_bytes`, and for each region — the core system libraries, the extended ones, the app's own — its bytes compared, differing, expected, skipped and unreadable, and whether it is complete (`core_compared_bytes` to `app_complete`); `ext_libs_diff`, `app_libs_diff`, `diffed_libs`, `protect_restore_failures`, `elapsed_ms` |
 | `developer_settings` | developer options and USB debugging | `developer_options_enabled`, `adb_enabled` |
-| `emulator` | build values typical of an emulator | `suspected`, `reasons`, `model`, `manufacturer`, `product`, `hardware` |
+| `emulator` | build values typical of an emulator, and the processor and the form of the device | `suspected`, `reasons`, `model`, `manufacturer`, `product`, `hardware`, `form_factor`, `cpu_vendor`, `cpu_implementers`, `cpu_model`, `hypervisor`, `abis`, `machine` |
 | `device` | the OS version, the security patch level, model, build, the app's ABI, memory page size | `release`, `sdk_int`, `security_patch`, `manufacturer`, `brand`, `model`, `device`, `build_id`, `fingerprint`, `abi`, `page_size` |
 | `network` | a VPN up on any network; an HTTP proxy set | `vpn_active`, `http_proxy_configured`, `transports`, `interfaces` (names only) |
+| `runtime` | the .NET runtime the app shipped with, and the Brotli decoder it carries | `runtime_version`, `brotli_decoder_present`, `brotli_decoder_version` |
+| `app_host` | whether Android runs the app itself, or another app runs it inside its own | `loaded_from`, `data_folder`, `uid_matches`, `uid_other_apps`, `preload_other_apps`, `other_app_code`, `truncated` |
 
 ### iOS
 
@@ -561,6 +564,7 @@ or keep their scans apart as older evidence.
 | `code_integrity` | the app's code in memory compared with its file, image by image | `checked`, `app_compared_bytes`, `app_diff_bytes`, `app_libs_diff`, `diffed_libs`; from version 5 the coverage: `app_images_expected` (the app's images loaded), `app_images_compared`, `app_images_unreadable`, `app_images_skipped`, `app_expected_bytes`, `app_unreadable_bytes`, `app_skipped_bytes`, `app_complete`, `main_executable_compared`, `app_images_not_compared` (each image not compared, by its path in the app, with why); `system_images_unreadable` |
 | `device` | the OS version and build, the model, the memory page size | `os_version`, `os_build`, `model_identifier`, `page_size` |
 | `network` | a VPN, inferred from the interfaces the proxy settings are scoped to — a heuristic, so the names come with it; an HTTP proxy | `vpn_active`, `http_proxy_configured`, `scoped_interfaces` |
+| `runtime` | the .NET runtime the app shipped with, and the Brotli decoder it carries | `runtime_version`, `brotli_decoder_present`, `brotli_decoder_version` |
 
 - **`apk_sha256` is the base APK's alone.** Installs of one release with different feature, ABI or
   density splits share it; the splits are in `split_apks`. Pin and compare builds by the base hash, and
@@ -586,7 +590,12 @@ what your own server observed, where the requests come from, and what happened a
 - **The phone never sends a score or a verdict. You decide, on your server.**
 - **Weigh each measurement by how rare it is on genuine phones, and by what is at stake.** Developer
   options, USB debugging and a VPN are common on honest phones; an instrumentation framework in memory, a
-  debugger attached, code changed in memory, or an app that is not your own signed build are not.
+  debugger attached, code changed in memory, or an app that is not your own signed build are not. Nor,
+  on Android, are another app running yours (`app_host`), the runtime's debugger thread in a release
+  build on a phone that is not debuggable (`debug_state`), a call app that is not part of the system
+  and that no app store installed (`other_access`), or a phone or tablet whose processor is an x86 one or
+  runs under a hypervisor (`emulator`, whatever its build values say). Genuine users can show even these;
+  section 7.7 says who, and what to do.
 - **Compare the app with your release** — its files, its code and its size, as section 7.2 describes. A
   modified app is the most direct attack on everything else here: it holds a genuine key.
 - **Compare a phone with itself.** A sudden change between one phone's reports — another signing
@@ -718,6 +727,32 @@ Run every new rule silently first: record what it would have done, measure how m
 would have stopped, and only then turn it on, with a review queue for what it holds. Check your rules
 against your outcomes regularly — fraud adapts to them.
 
+### 7.7 Genuine users who show a strong reading
+
+A strong reading is rare on genuine phones, not impossible. Before you refuse on one, know who else shows
+it, and give them a way through that a fraudster cannot take.
+
+| The reading | Genuine users who show it | How to tell | What to do |
+|---|---|---|---|
+| An emulator: `emulator`, `suspected` on `cpu`, `hypervisor` or `abi` | Users of Android apps on a computer, through an emulator; developers and testers, and services that rent virtual phones for testing; users of phones and tablets with Intel processors, sold until about 2016 | `form_factor` names a Chromebook, a PC, a car, a TV or a watch that says what it is, and then the processor does not count. `device` gives the model, the Android version and the security patch, and an Intel phone is an old model on an old Android version. Your testers' installations are yours to know | Decide whether you serve Android on computers at all. If you do, let it read and browse, and ask the user to use a phone for payments, payouts and new payees. If you do not, tell the user that the app needs a phone. Test against a backend of your own that accepts emulators, never against your production one |
+| Another app running yours: `app_host` | Users of an app that clones others, to sign in to a second account | `loaded_from`, `data_folder` and the lists name another app. A phone's own second user, dual-app feature or work profile does not show it. Names in `uid_other_apps` may be your own apps, where they share a user ID | Treat it as unsafe whatever the user intends, since the other app sees and can change everything your app shows and sends. Ask the user to open your app directly, not from inside another app, before anything sensitive. Do not count your own apps in `uid_other_apps` |
+| The debugger thread in a release build: `debug_state`, `jdwp_thread` | Your own debuggable builds; phones whose system is debuggable, such as developer builds of Android, some custom systems and emulators | `debuggable` in `app_identity`, and `ro.debuggable` in `system_properties` | Keep debuggable builds off your production backend. Judge a debuggable system as a reading of its own. In a release build on a system that is not debuggable no genuine case is known, so refuse. Where `ro.debuggable` could not be read, ask for another scan rather than decide |
+| A call app from outside a store: `other_access`, `call_app` | Users who chose another call app, from a store other than the ones you expect, or from a website or a computer | `system` and `installer`. A store names itself; a website or a computer names none | List the stores you accept, including phone makers' stores and the open-source ones your customers use. For a call app from none of them, do not refuse the user: Confirm sensitive actions another way than a call, and tell them that calls to your number may not reach you |
+
+- **Refuse the action, not the user.** A strong reading can hold a payment while the user still reads
+  their account.
+- **Tell the user only what to do next,** as section 7.4 says, such as opening the app directly, using a
+  phone, updating the phone's software or contacting support, and never which reading mattered.
+- **Give support a way to look.** Keep each refused scan's SHA-256 with the decision (section 7.5), so that
+  support can see which reading it was and record what they decided.
+- **Clear an installation, not a model.** When support clears a genuine user, clear that installation,
+  and look again if its readings change.
+- **A reading that could not be measured is not one.** Inside another app, commands the SDK starts may
+  fail, and those measurements then say that they could not read, which is neither clean nor proof of
+  anything (section 7.1).
+- **Count before you refuse** (section 7.6): how many of your customers show each reading, and which of
+  them are genuine.
+
 ---
 
 ## 8. Personal measurements and privacy
@@ -732,7 +767,7 @@ your app asks.
 | `local_addresses` | the phone's own IP addresses, link-local ones left out | `addresses` (`interface`, `address`) | both |
 | `accessibility` | the Accessibility services that are on, and the keyboard in use | `services`, `keyboard`, `settings_only`, `truncated` | Android |
 | `notification_access` | the apps allowed to read notifications, one-time codes among them | `listeners`, `truncated` | Android |
-| `other_access` | device-administrator apps, and known remote-control apps installed | `device_admins`, `remote_access_apps`, `truncated` | Android |
+| `other_access` | device-administrator apps, known remote-control apps installed, and the app that handles calls | `device_admins`, `remote_access_apps`, `truncated`, `call_app` | Android |
 | `screen_capture` | the screen being recorded, mirrored or cast | `recording`, `external_displays`, `recording_status` | both |
 | `location` | the last location the phone already knows — never a fresh fix, never a prompt | `permission` (`precise`, `approximate`, `none`), `latitude`, `longitude`, `accuracy_m`, `age_seconds`, `fix_time`; Android also `provider` | both |
 | `mock_location` | whether that location was faked | `permission`, `mock`, `age_seconds`, `fix_time`; iOS also `accessory` | both |

@@ -430,7 +430,27 @@ namespace Necessary
                 }
             }
 
-            return Ok(("device_admins", admins), ("remote_access_apps", remote), ("truncated", active.Count > MaxApps));
+            var result = Ok(("device_admins", admins), ("remote_access_apps", remote), ("truncated", active.Count > MaxApps));
+
+            // The app that handles calls (collector 13): malware that makes itself
+            // the call app can send a call meant for a bank to someone else. Left
+            // out where the phone names none.
+            try
+            {
+                if ((context.GetSystemService(Context.TelecomService) as Android.Telecom.TelecomManager)?.DefaultDialerPackage is string dialer
+                    && dialer.Length > 0)
+                {
+                    result["call_app"] = AppEntry(dialer);
+                }
+            }
+#pragma warning disable CA1031 // Unread, with why: never a phone without a call app.
+            catch (Exception error)
+#pragma warning restore CA1031
+            {
+                result = WithUnread(result, new[] { new KeyValuePair<string, string>("call_app", Why(error)) });
+            }
+
+            return result;
         }
 
         /// <summary>

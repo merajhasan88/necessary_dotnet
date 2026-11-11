@@ -6,3 +6,6 @@ __pycache__/
 *.nupkg
 *.snupkg
 tools/ioscheck/packages/
+
+# The sample backend's Python packages (README, "Install it")
+.venv/

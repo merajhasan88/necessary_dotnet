@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.11
+
+- Android: every scan carries `app_host`, whether another app runs yours inside its own: where Android says
+  your app's package file and data are, whether its process runs under your app's own user ID, which other
+  apps Android names for that user ID, which other apps' libraries the processes your app starts are made
+  to load first, and which other apps' code is in its memory. `doc/measurements.md` says how to read it.
+- Android: `debug_state` says whether the runtime's debugger thread runs in your app (`jdwp_thread`).
+- Android: `other_access` names the app that handles calls (`call_app`).
+- Android: a command that exits with an error is not a reading: `root_shell` and `system_properties` say
+  why they could not read, rather than taking what the command printed as the answer.
+- Android: `emulator` also reads the processor and what the device is (`form_factor`, `cpu_vendor`,
+  `cpu_implementers`, `cpu_model`, `hypervisor`, `abis`, `machine`). On a phone or tablet, an x86
+  processor, a hypervisor or Apple's cores count as reasons (`cpu`, `hypervisor`, `abi`), whatever the
+  build values say; on a Chromebook, a PC, a car, a TV or a watch they do not.
+- The Android collector is version 13.
+- The integration guide's new section 7.7 is on genuine users who show a strong reading, and what to do.
+- The Python sample backend's steps use Python 3.11 with its packages in a virtual environment, and the
+  sample stops quietly on Ctrl+C.
+
 ## 0.1.10
 
 - A new measurement, `runtime`, sent with every scan (Android collector 12, iOS collector 9): the .NET

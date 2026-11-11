@@ -57,8 +57,8 @@ false*, present and false; empty, sent when the SDK has it.
 
 ## Apps in a list
 
-An app in `services`, `keyboard`, `listeners`, `device_admins` or `remote_access_apps` (Android) is an
-object: `package`, its package name; `service`, the component the list is about, where there is one;
+An app in `services`, `keyboard`, `listeners`, `device_admins`, `remote_access_apps` or `call_app`
+(Android) is an object: `package`, its package name; `service`, the component the list is about, where there is one;
 `system`, true for an app that is part of the phone's system; and `installer`, the package that installed
 it, empty for none. `system` and `installer` are left out where Android hides the app from this one —
 unknown, never evidence. A list holds at most 32 apps, and `truncated` is true when the phone had more.
@@ -67,8 +67,8 @@ unknown, never evidence. A list holds at most 32 apps, and `truncated` is true w
 
 Your backend may ask for `app_identity`, `debug_state`, `tracer`, `root_files`, `root_shell`,
 `system_properties`, `selinux`, `mounts`, `runtime_maps`, `frida_ports`, `instrumentation_threads`,
-`exec_mappings`, `code_integrity`, `developer_settings` and `emulator`. Every scan carries `device` and
-`network`. The personal measurements are `local_addresses`, `accessibility`, `notification_access`,
+`exec_mappings`, `code_integrity`, `developer_settings` and `emulator`. Every scan carries `device`,
+`network`, `runtime` and `app_host`. The personal measurements are `local_addresses`, `accessibility`, `notification_access`,
 `other_access`, `screen_capture`, `location` and `mock_location`.
 
 ### `app_identity`
@@ -98,7 +98,15 @@ APK that could not be hashed as `split_apks:<file name>`.
 
 ### `debug_state`
 
-Whether a Java debugger is attached to the app, or the app waits for one, as Android's `Debug` says.
+Whether a Java debugger is attached to the app, or the app waits for one, as Android's `Debug` says;
+and whether the runtime's debugger thread (JDWP) runs in the app's process, through which a debugger
+attaches. Android starts that thread only in an app built debuggable, or on a phone whose system is
+debuggable (`ro.debuggable` 1, in `system_properties`). In a release build on a phone that is not, it means
+something made your app debuggable, so that a debugger can attach to its code and change it. Genuine users
+show the thread in two cases, both in the report: your own debuggable builds (`debuggable`, in
+`app_identity`), and phones whose system is debuggable, such as developer builds of Android, some custom
+systems and emulators, where it runs in every app. An `ro.debuggable` that could not be read decides
+neither way. The integration guide, section 7.7, says what to do.
 
 **When:** your backend asks for it.
 
@@ -106,6 +114,7 @@ Whether a Java debugger is attached to the app, or the app waits for one, as And
 |---|---|---|---|
 | `debugger_connected` | true/false | yes | a Java debugger is attached |
 | `waiting_for_debugger` | true/false | yes | the app waits for a debugger to attach |
+| `jdwp_thread` | true/false |  | the runtime's debugger thread runs in the app's process (Android collector 13) |
 
 ### `tracer`
 
@@ -330,18 +339,34 @@ probe answers `error`.
 ### `emulator`
 
 Build values typical of an Android emulator: the fingerprint, model, manufacturer, product, hardware and
-board names of the common emulators.
+board names of the common emulators. From Android collector 13, also the processor and what the device
+is. Apps that hide an emulator rewrite its build values, not its processor, and no phone running a
+current Android has an x86 processor, runs under a hypervisor, or has Apple's cores (an emulator on a
+Mac). On a phone or tablet these count in `suspected` as `cpu`, `hypervisor` and `abi`. A Chromebook, a
+PC, a car or a TV may run Android apps on such hardware: `form_factor` says which, and then they do not
+count. To check a report that only its processor flagged, read `cpu_model` and the build's `model`: An
+emulator's processor often names itself, for example `Android virtual processor`, and a phone's model
+name on an x86 processor is a contradiction. Genuine users show it too: users of Android apps on a computer,
+through an emulator, developers and testers, and users of phones and tablets with Intel processors, sold
+until about 2016. The integration guide, section 7.7, says how to tell them apart and what to do.
 
 **When:** your backend asks for it.
 
 | Field | Type | Needed | Meaning |
 |---|---|---|---|
-| `suspected` | true/false | yes | a build value looked like an emulator's |
-| `reasons` | list |  | which: `fingerprint`, `model`, `manufacturer`, `product`, `hardware`, `board` |
+| `suspected` | true/false | yes | a build value, or on a phone or tablet the hardware, looked like an emulator's |
+| `reasons` | list |  | which: `fingerprint`, `model`, `manufacturer`, `product`, `hardware`, `board`, and `cpu`, `hypervisor`, `abi` |
 | `model` | text |  | the build's model |
 | `manufacturer` | text |  | the build's manufacturer |
 | `product` | text |  | the build's product |
 | `hardware` | text |  | the build's hardware |
+| `form_factor` | one of `phone_or_tablet`, `chromebook`, `pc`, `car`, `tv`, `watch` |  | what the device is, by the features its system declares (Android collector 13) |
+| `cpu_vendor` | text |  | an x86 processor's vendor, for example `GenuineIntel`; left out on ARM |
+| `cpu_implementers` | list |  | the ARM cores' implementers: `0x41` is Arm's designs, `0x61` Apple's |
+| `cpu_model` | text |  | the processor's model, or the chip's name, as `/proc/cpuinfo` gives it |
+| `hypervisor` | true/false |  | an x86 processor runs under a hypervisor; left out on ARM |
+| `abis` | list |  | the ABIs the system offers, for example `arm64-v8a` |
+| `machine` | text |  | the kernel's name for the machine, for example `aarch64` |
 
 ### `device`
 
@@ -398,6 +423,38 @@ say the app was attacked.
 | `brotli_decoder_present` | true/false | yes | the app carries .NET's Brotli decoder |
 | `brotli_decoder_version` | text |  | the decoder's own version, for example `1.1.1`; left out when the app carries none |
 
+### `app_host`
+
+Whether Android runs the app itself, or another app runs it inside its own. Some malware installs your
+real app inside an app of its own and watches everything it does: what the person types, and what your
+backend answers. The phone needs no root for it. Such an app keeps your app's data, and may keep its
+package file, in its own private folder; its own code runs in your app's process, and it can answer your
+app's questions to Android for it. It can also give every process your app starts a library of its own to
+load first. An app that clones others, for a second account, does the same. So `another_app` in
+`loaded_from` or `data_folder`, `uid_matches` false, any name in `preload_other_apps` or `other_app_code`,
+or a name in `uid_other_apps` that is not one of your own apps means another app runs yours and sees all it
+does, whatever that app is for. Only apps signed with your app's own key can share its user ID
+(`sharedUserId`), so for most apps `uid_other_apps` is empty. Because such an app can answer for your app's
+user ID, `uid_matches` true clears nothing the other fields show. Google Play services is left out of
+`other_app_code`: Apps load its code by design. An app that runs yours may also change code in your app's
+memory, which `code_integrity` and `exec_mappings` read. Genuine users show it too, with an app that clones
+others so that they can sign in to a second account. A phone's own second user, dual-app feature or work
+profile is not another app: Your app keeps its own folder there, under another user. Names in
+`uid_other_apps` can be your own apps, where they share a user ID. The integration guide, section 7.7, says
+what to do.
+
+**When:** every scan, whether or not your backend asks. Android collector 13 and later.
+
+| Field | Type | Needed | Meaning |
+|---|---|---|---|
+| `loaded_from` | one of `installed`, `system`, `another_app`, `elsewhere` | yes | where the app's own package file is: where Android installs apps, a system partition, inside another app's private folder, or elsewhere |
+| `data_folder` | one of `own`, `another_app`, `elsewhere` | yes | where the app's private files are: its own folder, inside another app's, or elsewhere |
+| `uid_matches` | true/false | yes | the process's user ID is the one the app's own records give, and Android names the app for it; an app that runs yours can answer both |
+| `uid_other_apps` | list | yes | the other apps Android names for the process's user ID, at most 32; only apps signed with your app's own key can share it |
+| `preload_other_apps` | list | yes | the other apps whose libraries a process your app starts is made to load first (`LD_PRELOAD`), as your app's environment and one process it starts give them, at most 32; libraries outside apps' folders are not named |
+| `other_app_code` | list | yes | the apps whose code files are mapped into the app's process from their private folders, Google Play services left out, at most 32 |
+| `truncated` | true/false |  | `uid_other_apps`, `preload_other_apps` or `other_app_code` had more apps than the 32 a list holds |
+
 ### `local_addresses`
 
 The phone's own IP addresses, per network interface. Loopback and link-local addresses are left out: a
@@ -439,9 +496,14 @@ Every app allowed to read the phone's notifications — one-time codes among the
 
 ### `other_access`
 
-The device-administrator apps that are active, and which of four known remote-control apps are
+The device-administrator apps that are active, which of four known remote-control apps are
 installed: AnyDesk, TeamViewer QuickSupport, RustDesk and AirDroid — a list compiled into the SDK,
-which Android lets an app check without seeing other apps.
+which Android lets an app check without seeing other apps — and the app that handles calls. Malware
+that makes itself the call app can send a call meant for your number to someone else: A call app that
+is not part of the phone's system and that no app store installed is a strong sign of it. Genuine users
+show it too, with a call app they chose: one installed from a website or a computer names no store, and one
+from another store names that store as its `installer`. The integration guide, section 7.7, says what to
+do.
 
 **When:** your backend asks for it and your app enables it — a personal measurement.
 
@@ -450,6 +512,7 @@ which Android lets an app check without seeing other apps.
 | `device_admins` | list of apps | yes | the active device administrators, each with its `service` |
 | `remote_access_apps` | list of apps | yes | the remote-control apps installed, of the four |
 | `truncated` | true/false | yes, false | the phone had more device administrators than the 32 a list holds |
+| `call_app` | an app |  | the app that handles calls, left out where the phone names none (Android collector 13) |
 
 ### `screen_capture`
 
@@ -504,8 +567,8 @@ coordinates, so asking for it alone never sends a location.
 ## iOS
 
 Your backend may ask for `app_identity`, `code_signing`, `debugger`, `jailbreak_files`, `sandbox`,
-`dyld_images`, `environment` and `simulator`. Every scan carries `code_integrity`, `device` and
-`network`. The personal measurements are `local_addresses`, `screen_capture`, `location` and
+`dyld_images`, `environment` and `simulator`. Every scan carries `code_integrity`, `device`, `network`
+and `runtime`. The personal measurements are `local_addresses`, `screen_capture`, `location` and
 `mock_location`; `accessibility`, `notification_access` and `other_access` exist on iOS only to say that
 iOS cannot measure them.
 

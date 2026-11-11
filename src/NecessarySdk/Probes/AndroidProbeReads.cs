@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace Necessary
 {
@@ -435,6 +436,440 @@ namespace Necessary
         }
 
         /// <summary>
+        /// The runtime's debugger thread among this process's thread names
+        /// (collector 13): JDWP, through which a debugger attaches to the app's
+        /// code. Android starts it only in an app built debuggable, or on a system
+        /// that is (ro.debuggable 1): "JDWP" before Android 9, "ADB-JDWP Connection
+        /// Control Thread" since (15 characters of it), and "JDWP ..." threads while
+        /// a debugger is attached. With a thread name unread, a "no" could be
+        /// wrong, so it is unread instead.
+        /// </summary>
+        public static JsonObject DebugState(bool debuggerConnected, bool waitingForDebugger, IReadOnlyList<string> threadNames, int unreadable)
+        {
+            var result = Ok(("debugger_connected", debuggerConnected), ("waiting_for_debugger", waitingForDebugger));
+            var named = threadNames.Where(name => name.Length > 0).ToList();
+            if (named.Any(IsJdwpThread))
+            {
+                result["jdwp_thread"] = true;
+                return result;
+            }
+
+            if (named.Count == 0)
+            {
+                return WithUnread(result, new[] { Part("jdwp_thread", "no thread of this process could be listed") });
+            }
+
+            if (unreadable > 0)
+            {
+                return WithUnread(result, new[]
+                {
+                    Part("jdwp_thread", unreadable.ToString(CultureInfo.InvariantCulture) + " of "
+                        + (named.Count + unreadable).ToString(CultureInfo.InvariantCulture) + " thread names could not be read"),
+                });
+            }
+
+            result["jdwp_thread"] = false;
+            return result;
+        }
+
+        public static bool IsJdwpThread(string name) =>
+            name.StartsWith("JDWP", StringComparison.Ordinal) || name.StartsWith("ADB-JDWP", StringComparison.Ordinal);
+
+        /// <summary>Where a file lies, and in whose private folder when it is in one.</summary>
+        internal sealed record Place(string Kind, string? Owner = null);
+
+        private static readonly Regex[] InstalledApps =
+        {
+            new Regex("^/data/app/", RegexOptions.CultureInvariant),
+            new Regex("^/mnt/expand/[^/]+/app/", RegexOptions.CultureInvariant),
+        };
+
+        private static readonly string[] SystemPartitions = { "/system/", "/system_ext/", "/product/", "/vendor/", "/odm/", "/oem/", "/apex/" };
+
+        private static readonly Regex[] AppData =
+        {
+            new Regex("^/data/data/([^/]+)/", RegexOptions.CultureInvariant),
+            new Regex("^/data/user(?:_de)?/[0-9]+/([^/]+)/", RegexOptions.CultureInvariant),
+            new Regex("^/mnt/expand/[^/]+/user(?:_de)?/[0-9]+/([^/]+)/", RegexOptions.CultureInvariant),
+        };
+
+        // An installed app's folder is its package name, '-' (which no package name
+        // holds) and a random part: /data/app/<package>-<x>/, under /data/app/~~<x>/
+        // from Android 11, or on adopted storage.
+        private static readonly Regex InstalledOwner = new Regex(
+            "^(?:/data/app/|/mnt/expand/[^/]+/app/)(?:~~[^/]+/)?([A-Za-z][A-Za-z0-9_.]*)-[^/]*/",
+            RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// installed: where the package manager puts installed apps, Owner naming
+        /// the app where its folder does; system: a system partition; app_data: an
+        /// app's private folder, Owner naming the app; elsewhere: anywhere else.
+        /// </summary>
+        public static Place PlaceOf(string path)
+        {
+            if (InstalledApps.Any(pattern => pattern.IsMatch(path)))
+            {
+                var owner = InstalledOwner.Match(path);
+                return new Place("installed", owner.Success ? owner.Groups[1].Value : null);
+            }
+
+            if (SystemPartitions.Any(partition => path.StartsWith(partition, StringComparison.Ordinal)))
+            {
+                return new Place("system");
+            }
+
+            foreach (var pattern in AppData)
+            {
+                var match = pattern.Match(path);
+                if (match.Success)
+                {
+                    return new Place("app_data", match.Groups[1].Value);
+                }
+            }
+
+            return new Place("elsewhere");
+        }
+
+        // What a process maps to run code: fonts, databases and other data files are not counted.
+        private static readonly string[] CodeFiles = { ".apk", ".dex", ".odex", ".vdex", ".oat", ".art", ".so", ".jar" };
+
+        // Apps load Google Play services' code by design (its dynamite modules), from its own folder.
+        private const string PlayServices = "com.google.android.gms";
+
+        private static readonly string[] AppHostParts =
+        {
+            "loaded_from", "data_folder", "uid_matches", "uid_other_apps", "preload_other_apps", "other_app_code",
+        };
+
+        private static readonly Regex MapsFields = new Regex(@"\s+", RegexOptions.CultureInvariant);
+
+        // What a started process's linker prints when it cannot load a library it was given.
+        private static readonly Regex NotLoaded = new Regex(
+            "CANNOT LINK EXECUTABLE \"[^\"]*\": library \"([^\"]+)\"",
+            RegexOptions.CultureInvariant);
+
+        // LD_PRELOAD lists libraries split by spaces or colons, as Android's linker reads it.
+        private static IEnumerable<string> PreloadList(string? value) =>
+            (value ?? string.Empty).Split(new[] { ' ', ':', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+
+        private static KeyValuePair<string, string> Part(string name, string why) => new KeyValuePair<string, string>(name, why);
+
+        private static JsonArray Names(IEnumerable<string> names, int max) =>
+            new JsonArray(names.Take(max).Select(name => (JsonNode?)Take(name, 128)).ToArray());
+
+        /// <summary>
+        /// Whether Android runs the app itself, or another app runs it inside its
+        /// own (collector 13). An app that does keeps this one's data, and may keep
+        /// its package file, in its own private folder, and runs its own code in
+        /// this process. The readings: where Android says the package file and the
+        /// data are, the process's user ID against the app's, the other apps Android
+        /// names for that user ID, the other apps whose libraries a process the app
+        /// starts is made to load first, and the code files mapped in from other
+        /// apps' private folders. A host can answer the app's questions to Android
+        /// for it, so one part reading clean clears nothing another part shows. A
+        /// part not read is unread, never a clean answer.
+        /// </summary>
+        /// <remarks>
+        /// The libraries to load first (LD_PRELOAD) are read twice: in the app's own
+        /// environment, which every process it starts inherits, and in one process
+        /// it starts -- the list that process was given or, when it could not start,
+        /// the library its linker could not load. Libraries outside apps' folders
+        /// are not named.
+        /// </remarks>
+        public static JsonObject AppHost(
+            string packageName,
+            string? sourceDir,
+            string? dataDir,
+            int processUid,
+            int appUid,
+            Outcome<IReadOnlyList<string>?> packagesForUid,
+            Outcome<IReadOnlyList<string>> mapsLines,
+            Outcome<string?> ownPreload,
+            CommandResult startedPreload,
+            int maxApps)
+        {
+            var result = new JsonObject { ["status"] = "ok" };
+            var unread = new List<KeyValuePair<string, string>>();
+            if (string.IsNullOrEmpty(sourceDir))
+            {
+                unread.Add(Part("loaded_from", "the app's package file is not named"));
+            }
+            else
+            {
+                var where = PlaceOf(sourceDir!);
+                result["loaded_from"] =
+                    where.Kind == "app_data" && where.Owner != packageName ? "another_app"
+                    : where.Kind == "installed" || where.Kind == "system" ? where.Kind
+                    : "elsewhere";
+            }
+
+            if (string.IsNullOrEmpty(dataDir))
+            {
+                unread.Add(Part("data_folder", "the app's data folder is not named"));
+            }
+            else
+            {
+                var where = PlaceOf(dataDir!.TrimEnd('/') + "/");
+                result["data_folder"] =
+                    where.Kind != "app_data" ? "elsewhere"
+                    : where.Owner == packageName ? "own"
+                    : "another_app";
+            }
+
+            bool? truncated = null;
+            if (packagesForUid.Error is Exception failed)
+            {
+                unread.Add(Part("uid_matches", Why(failed)));
+                unread.Add(Part("uid_other_apps", Why(failed)));
+            }
+            else
+            {
+                var packages = packagesForUid.Value;
+                result["uid_matches"] = processUid == appUid && packages is not null && packages.Contains(packageName);
+
+                // Android lets only apps signed with this app's own key share its user
+                // ID (sharedUserId), so any other name is either such an app or an
+                // answer that did not come from Android.
+                var others = new SortedSet<string>(
+                    (packages ?? (IReadOnlyList<string>)Array.Empty<string>()).Where(name => name != packageName),
+                    StringComparer.Ordinal);
+                result["uid_other_apps"] = Names(others, maxApps);
+                truncated = others.Count > maxApps;
+            }
+
+            var preloads = PreloadList(ownPreload.IsFailure ? null : ownPreload.Value).ToList();
+            bool startedRead;
+            if (startedPreload.Problem is null)
+            {
+                preloads.AddRange(PreloadList(startedPreload.Output));
+                startedRead = true;
+            }
+            else
+            {
+                var library = startedPreload.Started && startedPreload.Finished ? NotLoaded.Match(startedPreload.Output) : null;
+                startedRead = library is { Success: true };
+                if (startedRead)
+                {
+                    preloads.Add(library!.Groups[1].Value);
+                }
+            }
+
+            var preloaders = new SortedSet<string>(
+                preloads.Select(path => PlaceOf(path).Owner).Where(owner => owner is not null && owner != packageName).Select(owner => owner!),
+                StringComparer.Ordinal);
+            if (startedRead || preloaders.Count > 0)
+            {
+                result["preload_other_apps"] = Names(preloaders, maxApps);
+                truncated = (truncated ?? false) || preloaders.Count > maxApps;
+            }
+            else
+            {
+                unread.Add(Part("preload_other_apps", "a started process " + startedPreload.Problem));
+            }
+
+            var lines = mapsLines.IsFailure ? null : mapsLines.Value;
+            if (lines is null || lines.Count == 0)
+            {
+                unread.Add(Part("other_app_code", mapsLines.Error is Exception error ? Why(error) : "/proc/self/maps returned no lines"));
+            }
+            else
+            {
+                var owners = new SortedSet<string>(StringComparer.Ordinal);
+                foreach (var line in lines)
+                {
+                    var fields = MapsFields.Split(line.Trim(), 6);
+                    if (fields.Length < 6)
+                    {
+                        continue;
+                    }
+
+                    var path = fields[5].EndsWith(" (deleted)", StringComparison.Ordinal)
+                        ? fields[5].Substring(0, fields[5].Length - " (deleted)".Length)
+                        : fields[5];
+                    if (!fields[1].Contains('x', StringComparison.Ordinal) && !CodeFiles.Any(ending => path.EndsWith(ending, StringComparison.Ordinal)))
+                    {
+                        continue;
+                    }
+
+                    var where = PlaceOf(path);
+                    if (where.Kind == "app_data" && where.Owner is string owner && owner != packageName && owner != PlayServices)
+                    {
+                        owners.Add(owner);
+                    }
+                }
+
+                result["other_app_code"] = Names(owners, maxApps);
+                truncated = (truncated ?? false) || owners.Count > maxApps;
+            }
+
+            // One flag for the three lists: a list read held more apps than it can.
+            if (truncated is bool more)
+            {
+                result["truncated"] = more;
+            }
+
+            if (AppHostParts.All(name => unread.Any(entry => entry.Key == name)))
+            {
+                return Error("nothing of where the app runs could be read: " + unread[0].Value);
+            }
+
+            return WithUnread(result, unread);
+        }
+
+        /// <summary>The processor as /proc/cpuinfo names it: an x86 vendor, ARM implementers, a model, a hypervisor.</summary>
+        internal sealed record Cpu(string? Vendor, IReadOnlyList<string> Implementers, string? Model, bool? Hypervisor);
+
+        /// <summary>
+        /// x86 names its vendor (vendor_id) and lists its flags, hypervisor among
+        /// them under a virtual machine; ARM names each core's implementer, 0x41
+        /// for Arm's own designs. The model is x86's "model name" or ARM's
+        /// "Hardware". Hypervisor is null where there are no x86 flags to read.
+        /// </summary>
+        public static Cpu CpuOf(IReadOnlyList<string> lines)
+        {
+            string? vendor = null;
+            string? model = null;
+            bool? hypervisor = null;
+            var implementers = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (var line in lines)
+            {
+                var colon = line.IndexOf(':', StringComparison.Ordinal);
+                if (colon < 0)
+                {
+                    continue;
+                }
+
+                var value = line.Substring(colon + 1).Trim();
+                switch (line.Substring(0, colon).Trim().ToLowerInvariant())
+                {
+                    case "vendor_id":
+                        if (vendor is null && value.Length > 0)
+                        {
+                            vendor = value;
+                        }
+
+                        break;
+                    case "cpu implementer":
+                        if (value.Length > 0)
+                        {
+                            implementers.Add(value.ToLowerInvariant());
+                        }
+
+                        break;
+                    case "model name":
+                    case "hardware":
+                        if (model is null && value.Length > 0)
+                        {
+                            model = value;
+                        }
+
+                        break;
+                    case "flags":
+                        hypervisor = hypervisor == true || value.Split(' ').Contains("hypervisor");
+                        break;
+                }
+            }
+
+            return new Cpu(vendor, implementers.ToList(), model, hypervisor);
+        }
+
+        /// <summary>The system features that say what the device is.</summary>
+        public static IReadOnlyList<string> FormFactorFeatures { get; } = new[]
+        {
+            "org.chromium.arc", "org.chromium.arc.device_management", "android.hardware.type.pc",
+            "android.hardware.type.automotive", "android.software.leanback", "android.hardware.type.watch",
+        };
+
+        /// <summary>
+        /// What the device is, by the features its system declares: a Chromebook, a
+        /// PC, a car or a TV runs Android apps on hardware no phone has, so its
+        /// processor is no sign of an emulator.
+        /// </summary>
+        public static string FormFactor(ISet<string> features) =>
+            features.Contains("org.chromium.arc") || features.Contains("org.chromium.arc.device_management") ? "chromebook"
+            : features.Contains("android.hardware.type.pc") ? "pc"
+            : features.Contains("android.hardware.type.automotive") ? "car"
+            : features.Contains("android.software.leanback") ? "tv"
+            : features.Contains("android.hardware.type.watch") ? "watch"
+            : "phone_or_tablet";
+
+        /// <summary>The hardware readings of the emulator measurement, and the reasons they give.</summary>
+        internal sealed record EmulatorHardware(JsonObject Fields, IReadOnlyList<string> Reasons, IReadOnlyList<KeyValuePair<string, string>> Unread);
+
+        /// <summary>
+        /// The processor, the ABIs the system offers and the kernel's machine
+        /// (collector 13). Apps that hide an emulator rewrite its build values but
+        /// not its processor; no phone running a current Android has an x86 one,
+        /// runs under a hypervisor, or has Apple's cores (0x61, an emulator on a
+        /// Mac). These count as reasons only on a phone or tablet: a Chromebook, a
+        /// PC, a car or a TV may have such hardware, and form_factor says which.
+        /// </summary>
+        public static EmulatorHardware EmulatorHardwareOf(
+            Outcome<IReadOnlyList<string>> cpuLines,
+            IReadOnlyList<string> abis,
+            string? machine,
+            ISet<string> features)
+        {
+            var fields = new JsonObject();
+            var reasons = new List<string>();
+            var unread = new List<KeyValuePair<string, string>>();
+            var form = FormFactor(features);
+            fields["form_factor"] = form;
+            fields["abis"] = new JsonArray(abis.Take(8).Select(abi => (JsonNode?)Take(abi, 32)).ToArray());
+            if (!string.IsNullOrEmpty(machine))
+            {
+                fields["machine"] = Take(machine!, 32);
+            }
+
+            var lines = cpuLines.IsFailure ? null : cpuLines.Value;
+            var cpu = lines is null || lines.Count == 0 ? null : CpuOf(lines);
+            if (cpu is null || (cpu.Vendor is null && cpu.Implementers.Count == 0))
+            {
+                unread.Add(Part("cpu", cpuLines.Error is Exception error ? Why(error) : "/proc/cpuinfo names no processor"));
+            }
+
+            if (cpu?.Vendor is string vendor)
+            {
+                fields["cpu_vendor"] = Take(vendor, 64);
+            }
+
+            if (cpu is { Implementers.Count: > 0 })
+            {
+                fields["cpu_implementers"] = new JsonArray(cpu.Implementers.Take(8).Select(found => (JsonNode?)Take(found, 8)).ToArray());
+            }
+
+            if (cpu?.Model is string model)
+            {
+                fields["cpu_model"] = Take(model, 128);
+            }
+
+            if (cpu?.Hypervisor is bool hypervisor)
+            {
+                fields["hypervisor"] = hypervisor;
+            }
+
+            if (form == "phone_or_tablet")
+            {
+                if (cpu is not null && (cpu.Vendor is not null || cpu.Implementers.Contains("0x61")))
+                {
+                    reasons.Add("cpu");
+                }
+
+                if (cpu?.Hypervisor == true)
+                {
+                    reasons.Add("hypervisor");
+                }
+
+                if (abis.Count == 0 || abis.Any(abi => abi.StartsWith("x86", StringComparison.Ordinal)))
+                {
+                    reasons.Add("abi");
+                }
+            }
+
+            return new EmulatorHardware(fields, reasons, unread);
+        }
+
+        /// <summary>
         /// Why a read failed, for <c>unread</c> and a probe's <c>error</c>: the
         /// failure and every cause beneath it (<see cref="Causes"/>), within the
         /// contract's 160 characters.
@@ -480,7 +915,18 @@ namespace Necessary
             public string? Problem =>
                 !Started ? "could not start" + (Failure is null ? string.Empty : ": " + Failure)
                 : !Finished ? "did not finish in time"
+
+                // Every command run here exits 0 when it ran, so another exit is a
+                // command that did not run as asked -- one the system's linker could
+                // not start, say -- and what it printed is why, not an answer.
+                : ExitCode is int code && code != 0 ? "exited with " + code.ToString(CultureInfo.InvariantCulture) + FirstLine(Output)
                 : null;
+
+            private static string FirstLine(string output)
+            {
+                var line = output.Trim().Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None)[0];
+                return line.Length == 0 ? string.Empty : ": " + line;
+            }
         }
 
         /// <summary>How one attempt to reach a local port ended: open, refused (a measured "closed"), or failed with why.</summary>

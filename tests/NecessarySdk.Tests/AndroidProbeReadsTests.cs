@@ -20,6 +20,40 @@ namespace Necessary.Tests
         private static readonly CommandResult TimedOut = new CommandResult(true, false, null, string.Empty);
         private static readonly CommandResult UnreadOutput = new CommandResult(true, false, 0, string.Empty, "output: IOException");
 
+        // A command the linker could not start: it exits 1 and says why on the merged error stream.
+        private static readonly CommandResult NotLinked = new CommandResult(
+            true,
+            true,
+            1,
+            "CANNOT LINK EXECUTABLE \"/system/bin/sh\": library \"/data/app/com.example.host-a==/lib/arm64/libhook.so\" not found\n");
+
+        // Nothing to load first, in the app's environment or in a process it starts (which echoes an empty line).
+        private static readonly Outcome<string?> NoPreload = Outcome<string?>.Success(null);
+        private static readonly CommandResult StartedClean = new CommandResult(true, true, 0, "\n");
+
+        private static readonly HashSet<string> NoFeatures = new HashSet<string>();
+
+        private static readonly string[] EmulatorCpu =
+        {
+            "processor\t: 0", "vendor_id\t: GenuineIntel", "model name\t: Android virtual processor",
+            "flags\t\t: fpu de pse tsc msr pae sse sse2 ht syscall nx lm hypervisor lahf_lm", string.Empty,
+            "processor\t: 1", "vendor_id\t: GenuineIntel", "flags\t\t: fpu de pse hypervisor",
+        };
+
+        private static readonly string[] ArmPhoneCpu =
+        {
+            "Processor\t: AArch64 Processor rev 4 (aarch64)", "processor\t: 0",
+            "Features\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 cpuid", "CPU implementer\t: 0x41",
+            "CPU part\t: 0xd03", string.Empty, "processor\t: 4", "CPU implementer\t: 0x41", "CPU part\t: 0xd09",
+            "Hardware\t: vendor ExampleChip",
+        };
+
+        private static string[] Strings(JsonNode? list) => ((JsonArray)list!).Select(item => (string)item!).ToArray();
+
+        private static Outcome<IReadOnlyList<string>> Lines(params string[] lines) => Outcome<IReadOnlyList<string>>.Success(lines);
+
+        private static Outcome<IReadOnlyList<string>?> Packages(params string[]? names) => Outcome<IReadOnlyList<string>?>.Success(names);
+
         // The location and mock-location measurements are one observation.
         private static readonly string[] Coordinates = { "latitude", "longitude", "accuracy_m", "provider" };
 
@@ -94,6 +128,12 @@ namespace Necessary.Tests
             Assert.True(IsError(RootShell(UnreadOutput)));
             Assert.False((bool)RootShell(Ran)["su_found"]!);
             Assert.True((bool)RootShell(Ran with { Output = "/system/xbin/su\n" })["su_found"]!);
+
+            // A shell that did not run found nothing: its complaint is no path to su.
+            var failed = RootShell(NotLinked);
+            Assert.True(IsError(failed));
+            Assert.StartsWith("su lookup exited with 1: CANNOT LINK EXECUTABLE", (string?)failed["error"], StringComparison.Ordinal);
+            Assert.True(IsError(RootShell(Ran with { ExitCode = 127 })));
         }
 
         [Fact]
@@ -103,6 +143,204 @@ namespace Necessary.Tests
             Assert.True(JsonNode.DeepEquals(new JsonObject { ["ro.secure"] = "1" }, some["properties"]));
             Assert.Contains("ro.debuggable", Keys(Unread(some)));
             Assert.True(IsError(SystemProperties(new[] { Pair("ro.secure", TimedOut) })));
+
+            // getprop that did not run gave no value, whatever it printed.
+            var linker = SystemProperties(new[] { Pair("ro.secure", Ran with { Output = "1\n" }), Pair("ro.boot.verifiedbootstate", NotLinked) });
+            Assert.True(JsonNode.DeepEquals(new JsonObject { ["ro.secure"] = "1" }, linker["properties"]));
+            Assert.StartsWith("getprop exited with 1: CANNOT LINK", (string?)Unread(linker)!["ro.boot.verifiedbootstate"], StringComparison.Ordinal);
+            Assert.True(IsError(SystemProperties(new[] { Pair("ro.boot.verifiedbootstate", NotLinked) })));
+        }
+
+        [Fact]
+        public void The_debugger_thread_is_named_or_unread()
+        {
+            static JsonObject State(string[] names, int unreadable) => DebugState(false, false, names, unreadable);
+            Assert.True((bool)State(new[] { "main", "ADB-JDWP Connec" }, 0)["jdwp_thread"]!);
+            Assert.True((bool)State(new[] { "main", "JDWP" }, 0)["jdwp_thread"]!);
+            Assert.False((bool)State(new[] { "main", "RenderThread", "Jit thread pool" }, 0)["jdwp_thread"]!);
+
+            // A name not read could be the one: unread, never false.
+            var some = State(new[] { "main" }, 2);
+            Assert.False(some.ContainsKey("jdwp_thread"));
+            Assert.Equal(new[] { "jdwp_thread" }, Keys(Unread(some)));
+            var none = State(Array.Empty<string>(), 0);
+            Assert.False(none.ContainsKey("jdwp_thread"));
+            Assert.Equal(new[] { "jdwp_thread" }, Keys(Unread(none)));
+            Assert.True((bool)DebugState(true, false, new[] { "main" }, 0)["debugger_connected"]!);
+        }
+
+        [Fact]
+        public void An_app_run_by_another_app_is_named_by_where_its_files_are()
+        {
+            const string pkg = "com.example.bank";
+            var maps = Lines(
+                "7000-8000 r--p 00000000 fd:00 1   /data/app/~~a==/com.example.bank-b==/base.apk",
+                "8000-9000 r-xp 00000000 fd:00 2   /data/app/~~a==/com.example.bank-b==/oat/arm64/base.odex",
+                "9000-a000 r--p 00000000 fd:00 3   /data/user_de/0/com.google.android.gms/app_chimera/m/0000001/MapsDynamite.apk",
+                "a000-b000 r--p 00000000 fd:00 4   /data/user/0/com.example.bank/files/fonts/a.ttf",
+                "b000-c000 r--p 00000000 fd:00 5   /data/user/0/com.other.provider/files/shared.ttf",
+                "c000-d000 rw-p 00000000 00:00 0   [anon:dalvik-main space]");
+            JsonObject Host(string? source, string? data, int processUid, int appUid, Outcome<IReadOnlyList<string>?> packages, Outcome<IReadOnlyList<string>>? lines = null) =>
+                AppHost(pkg, source, data, processUid, appUid, packages, lines ?? maps, NoPreload, StartedClean, 32);
+
+            var own = Host("/data/app/~~a==/com.example.bank-b==/base.apk", "/data/user/0/com.example.bank", 10123, 10123, Packages(pkg));
+            Assert.Equal("installed", (string?)own["loaded_from"]);
+            Assert.Equal("own", (string?)own["data_folder"]);
+            Assert.True((bool)own["uid_matches"]!);
+            Assert.Empty(Strings(own["uid_other_apps"]));
+            Assert.Empty(Strings(own["preload_other_apps"]));
+            Assert.Empty(Strings(own["other_app_code"]));
+            Assert.False((bool)own["truncated"]!);
+            Assert.Null(Unread(own));
+
+            // A second user (a work profile, a phone maker's dual apps): still the app's own.
+            Assert.Equal("own", (string?)Host("/data/app/x/base.apk", "/data/user/999/com.example.bank/", 99910123, 99910123, Packages(pkg))["data_folder"]);
+            Assert.Equal("system", (string?)Host("/product/app/Bank/Bank.apk", "/data/user/0/" + pkg, 1, 1, Packages(pkg))["loaded_from"]);
+
+            // Run inside another app: its package file, data and code are in that app's folder.
+            const string host = "com.example.host";
+            var hosted = Host(
+                "/data/user/0/" + host + "/virtual/data/app/" + pkg + "/base.apk",
+                "/data/user/0/" + host + "/virtual/data/user/0/" + pkg,
+                10200,
+                10200,
+                Packages(host),
+                Lines("1000-2000 r--p 00000000 fd:00 9   /data/user/0/" + host + "/virtual/data/app/" + pkg + "/base.apk"));
+            Assert.Equal("another_app", (string?)hosted["loaded_from"]);
+            Assert.Equal("another_app", (string?)hosted["data_folder"]);
+            Assert.False((bool)hosted["uid_matches"]!);
+            Assert.Equal(new[] { host }, Strings(hosted["uid_other_apps"]));
+            Assert.Equal(new[] { host }, Strings(hosted["other_app_code"]));
+            Assert.False((bool)Host("/data/app/x/base.apk", "/data/user/0/" + pkg, 10200, 10123, Packages(pkg))["uid_matches"]!);
+
+            // A host that answers the app's questions to Android: the package file is where
+            // Android installed it and the user ID agrees with the app's records, but the data is
+            // in the host's folder and the answer names apps for that user ID that the app cannot
+            // share it with.
+            var answered = Host(
+                "/data/app/~~a==/com.example.bank-b==/base.apk",
+                "/data/user/0/com.example.host/plugins/" + pkg,
+                10410,
+                10410,
+                Packages(pkg, "com.google.android.gsf", "com.google.android.backuptransport"));
+            Assert.Equal("installed", (string?)answered["loaded_from"]);
+            Assert.Equal("another_app", (string?)answered["data_folder"]);
+            Assert.True((bool)answered["uid_matches"]!);
+            Assert.Equal(new[] { "com.google.android.backuptransport", "com.google.android.gsf" }, Strings(answered["uid_other_apps"]));
+
+            // The app's own sibling apps sharing its user ID are named too; at most 32, then truncated.
+            var siblings = Enumerable.Range(1, 40).Select(n => "com.example.bank.part" + n.ToString("00", System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            var shared = Host("/data/app/x/base.apk", "/data/user/0/" + pkg, 10123, 10123, Packages(new[] { pkg }.Concat(siblings).ToArray()));
+            Assert.Equal(siblings.Take(32), Strings(shared["uid_other_apps"]));
+            Assert.True((bool)shared["truncated"]!);
+
+            // A user ID Android names no app for: not the app's, and no other app named.
+            var nameless = Host("/data/app/x/base.apk", "/data/user/0/" + pkg, 10123, 10123, Packages(null));
+            Assert.False((bool)nameless["uid_matches"]!);
+            Assert.Empty(Strings(nameless["uid_other_apps"]));
+            var noAnswer = Host("/data/app/x/base.apk", "/data/user/0/" + pkg, 10123, 10123, Outcome<IReadOnlyList<string>?>.Failure(new UnauthorizedAccessException("refused")));
+            Assert.Equal(new[] { "uid_matches", "uid_other_apps" }, Keys(Unread(noAnswer)));
+            Assert.False((bool)noAnswer["truncated"]!);
+
+            // Nothing read is an error; a part not read is unread, never a clean answer.
+            Assert.True(IsError(AppHost(
+                pkg,
+                null,
+                null,
+                1,
+                1,
+                Outcome<IReadOnlyList<string>?>.Failure(new UnauthorizedAccessException("refused")),
+                Outcome<IReadOnlyList<string>>.Failure(new IOException("denied")),
+                Outcome<string?>.Failure(new UnauthorizedAccessException("refused")),
+                TimedOut,
+                32)));
+            var partial = Host("/data/app/x/base.apk", "/data/user/0/" + pkg, 1, 1, Packages(pkg), Outcome<IReadOnlyList<string>>.Failure(new IOException("denied")));
+            Assert.False(partial.ContainsKey("other_app_code"));
+            Assert.Equal(new[] { "other_app_code" }, Keys(Unread(partial)));
+            Assert.Empty(Strings(partial["preload_other_apps"]));
+        }
+
+        [Fact]
+        public void The_libraries_a_started_process_is_made_to_load_are_named_by_their_apps()
+        {
+            const string pkg = "com.example.bank";
+            JsonObject Host(Outcome<string?> own, CommandResult started) => AppHost(
+                pkg,
+                "/data/app/com.example.bank-b==/base.apk",
+                "/data/user/0/" + pkg,
+                10123,
+                10123,
+                Packages(pkg),
+                Lines("7000-8000 r--p 00000000 fd:00 1   /data/app/com.example.bank-b==/base.apk"),
+                own,
+                started,
+                32);
+            Assert.Empty(Strings(Host(NoPreload, StartedClean)["preload_other_apps"]));
+            Assert.Null(Unread(Host(NoPreload, StartedClean)));
+
+            // A started process its linker could not start, for another app's library.
+            Assert.Equal(new[] { "com.example.host" }, Strings(Host(NoPreload, NotLinked)["preload_other_apps"]));
+
+            // The list a started process was given: the system's libraries and the app's own are not named.
+            var given = new CommandResult(
+                true,
+                true,
+                0,
+                "/data/app/~~r==/com.example.host-y==/lib/arm64/libhook.so:/system/lib64/libc++.so /data/app/com.example.bank-b==/lib/arm64/libown.so\n");
+            Assert.Equal(new[] { "com.example.host" }, Strings(Host(NoPreload, given)["preload_other_apps"]));
+
+            // The app's own environment, which every process it starts inherits; a private folder counts too.
+            Assert.Equal(new[] { "com.example.other" }, Strings(Host(Outcome<string?>.Success("/data/user/0/com.example.other/files/libx.so"), StartedClean)["preload_other_apps"]));
+
+            // No started process read is unread, unless the environment named an app already.
+            var unanswered = Host(NoPreload, TimedOut);
+            Assert.False(unanswered.ContainsKey("preload_other_apps"));
+            Assert.StartsWith("a started process did not finish", (string?)Unread(unanswered)!["preload_other_apps"], StringComparison.Ordinal);
+            Assert.Contains("preload_other_apps", Keys(Unread(Host(NoPreload, Ran with { ExitCode = 2, Output = "sh: no\n" }))));
+            Assert.Equal(new[] { "com.example.other" }, Strings(Host(Outcome<string?>.Success("/data/app/com.example.other-q==/lib/arm64/libx.so"), NotStarted)["preload_other_apps"]));
+
+            // An installed app's folder names it: on adopted storage, and as Android 7 named folders.
+            Assert.Equal("com.example.host", PlaceOf("/mnt/expand/1234-abcd/app/com.example.host-1/lib/arm/libh.so").Owner);
+            Assert.Equal("com.example.host", PlaceOf("/data/app/com.example.host-1/base.apk").Owner);
+            Assert.Null(PlaceOf("/data/app/x/base.apk").Owner);
+        }
+
+        [Fact]
+        public void An_emulator_is_told_by_its_processor_whatever_its_build_says()
+        {
+            var avd = EmulatorHardwareOf(Lines(EmulatorCpu), new[] { "x86_64" }, "x86_64", NoFeatures);
+            Assert.Equal(new[] { "cpu", "hypervisor", "abi" }, avd.Reasons);
+            Assert.Equal("GenuineIntel", (string?)avd.Fields["cpu_vendor"]);
+            Assert.Equal("Android virtual processor", (string?)avd.Fields["cpu_model"]);
+            Assert.True((bool)avd.Fields["hypervisor"]!);
+            Assert.Equal("phone_or_tablet", (string?)avd.Fields["form_factor"]);
+
+            // A phone: Arm's cores, no x86 flags to read, no reason.
+            var phone = EmulatorHardwareOf(Lines(ArmPhoneCpu), new[] { "arm64-v8a", "armeabi-v7a", "armeabi" }, "aarch64", NoFeatures);
+            Assert.Empty(phone.Reasons);
+            Assert.Equal(new[] { "0x41" }, Strings(phone.Fields["cpu_implementers"]));
+            Assert.Equal("vendor ExampleChip", (string?)phone.Fields["cpu_model"]);
+            Assert.False(phone.Fields.ContainsKey("hypervisor"));
+            Assert.False(phone.Fields.ContainsKey("cpu_vendor"));
+            Assert.Equal(new[] { "arm64-v8a", "armeabi-v7a", "armeabi" }, Strings(phone.Fields["abis"]));
+            Assert.Equal("aarch64", (string?)phone.Fields["machine"]);
+
+            // An emulator on a Mac: Apple's cores.
+            Assert.Equal(new[] { "cpu" }, EmulatorHardwareOf(Lines("CPU implementer\t: 0x61"), new[] { "arm64-v8a" }, "aarch64", NoFeatures).Reasons);
+
+            // Translation that answers aarch64 changes nothing: the processor still says x86.
+            Assert.Equal(new[] { "cpu", "hypervisor", "abi" }, EmulatorHardwareOf(Lines(EmulatorCpu), Array.Empty<string>(), "aarch64", NoFeatures).Reasons);
+
+            // A Chromebook has the same hardware and says what it is: no reason, the readings kept.
+            var chromebook = EmulatorHardwareOf(Lines(EmulatorCpu), new[] { "x86_64", "x86" }, "x86_64", new HashSet<string> { "org.chromium.arc" });
+            Assert.Empty(chromebook.Reasons);
+            Assert.Equal("chromebook", (string?)chromebook.Fields["form_factor"]);
+            Assert.Equal("GenuineIntel", (string?)chromebook.Fields["cpu_vendor"]);
+
+            // An unreadable processor is unread, never a phone's.
+            var unreadable = EmulatorHardwareOf(Outcome<IReadOnlyList<string>>.Failure(new IOException("denied")), new[] { "arm64-v8a" }, "aarch64", NoFeatures);
+            Assert.Equal(new[] { "cpu" }, unreadable.Unread.Select(part => part.Key));
+            Assert.Empty(unreadable.Reasons);
         }
 
         [Fact]

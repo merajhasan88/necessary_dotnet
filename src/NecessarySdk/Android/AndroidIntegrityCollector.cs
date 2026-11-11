@@ -44,7 +44,12 @@ namespace Necessary
         //     location read answers both location measurements, which carry its
         //     fix_time.
         // 12 = the runtime measurement, volunteered on every scan.
-        private const int CollectorVersion = 12;
+        // 13 = volunteers app_host, whether another app runs this one inside its
+        //      own; debug_state names the runtime's debugger thread (jdwp_thread);
+        //      other_access names the app that handles calls; emulator reads the
+        //      processor and the form of the device; a command that exits with an
+        //      error is no reading.
+        private const int CollectorVersion = 13;
 
         // Apps listed per capability, at most.
         private const int MaxApps = 32;
@@ -55,7 +60,7 @@ namespace Necessary
         private const int CommandTimeoutMs = 3000;
 
         // Sent with every scan whether or not the backend asked.
-        private static readonly string[] VolunteeredProbes = { "device", "network", "runtime" };
+        private static readonly string[] VolunteeredProbes = { "device", "network", "runtime", "app_host" };
 
         // The optional measurements this collector knows. Each is collected only
         // when the backend asks for it AND the app enabled it.
@@ -372,6 +377,7 @@ namespace Necessary
                     "device" => ProbeDevice(),
                     "network" => ProbeNetwork(),
                     "runtime" => ProbeRuntime(),
+                    "app_host" => ProbeAppHost(),
                     "local_addresses" => enabled.Contains(probe) ? ProbeLocalAddresses() : NotEnabled(),
                     "accessibility" => enabled.Contains(probe) ? ProbeAccessibility() : NotEnabled(),
                     "notification_access" => enabled.Contains(probe) ? ProbeNotificationAccess() : NotEnabled(),

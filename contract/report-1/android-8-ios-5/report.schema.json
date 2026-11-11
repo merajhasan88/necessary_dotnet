@@ -300,10 +300,14 @@
         },
         "waiting_for_debugger": {
           "type": "boolean"
+        },
+        "jdwp_thread": {
+          "type": "boolean",
+          "description": "the runtime's debugger thread (JDWP) runs in the app's process"
         }
       },
       "additionalProperties": true,
-      "description": "a Java debugger attached or awaited",
+      "description": "a Java debugger attached or awaited, and the runtime's debugger thread",
       "x-answered": "when the backend requests it",
       "x-complete-when-ok": [
         "debugger_connected",
@@ -1096,8 +1100,52 @@
         "suspected": {
           "type": "boolean"
         },
+        "cpu_vendor": {
+          "type": "string"
+        },
+        "cpu_implementers": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8
+          },
+          "description": "the ARM cores' implementers, as /proc/cpuinfo gives them: 0x41 Arm, 0x61 Apple"
+        },
+        "cpu_model": {
+          "type": "string"
+        },
+        "hypervisor": {
+          "type": "boolean",
+          "description": "an x86 processor's hypervisor flag; left out on ARM"
+        },
+        "abis": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "description": "the ABIs the system offers, as Build.SUPPORTED_ABIS lists them"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "form_factor": {
+          "enum": [
+            "phone_or_tablet",
+            "chromebook",
+            "pc",
+            "car",
+            "tv",
+            "watch"
+          ],
+          "description": "what the device is, by the features its system declares"
+        },
         "reasons": {
-          "description": "the build values that looked like an emulator"
+          "description": "the build values that looked like an emulator, and on a phone or tablet the hardware: cpu, hypervisor, abi"
         },
         "model": {
           "description": "the build's model"
@@ -1113,7 +1161,7 @@
         }
       },
       "additionalProperties": true,
-      "description": "build values typical of an emulator",
+      "description": "build values typical of an emulator, and the processor and the form of the device",
       "x-answered": "when the backend requests it",
       "x-complete-when-ok": [
         "suspected"
@@ -1287,6 +1335,104 @@
           "description": "the decoder's own version; left out when the app carries none, and in unread when it could not be read"
         }
       }
+    },
+    "android.app_host": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "error",
+            "unsupported",
+            "not_enabled"
+          ]
+        },
+        "error": {
+          "type": "string",
+          "description": "why the probe could not measure"
+        },
+        "error_type": {
+          "description": "the failure's kind (Android)"
+        },
+        "reason": {
+          "description": "why the probe is unsupported here"
+        },
+        "unread": {
+          "$ref": "#/$defs/unread"
+        },
+        "loaded_from": {
+          "enum": [
+            "installed",
+            "system",
+            "another_app",
+            "elsewhere"
+          ],
+          "description": "where the app's own package file is: where Android installs apps, a system partition, inside another app's private folder, or elsewhere"
+        },
+        "data_folder": {
+          "enum": [
+            "own",
+            "another_app",
+            "elsewhere"
+          ],
+          "description": "where the app's private files are: its own folder, inside another app's, or elsewhere"
+        },
+        "uid_matches": {
+          "type": "boolean",
+          "description": "the process's user ID is the one the app's own records give, and Android names the app for it; an app that runs this one can answer both"
+        },
+        "uid_other_apps": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+          },
+          "description": "the other apps Android names for the process's user ID, sorted, at most 32; only apps signed with the app's own key can share it"
+        },
+        "preload_other_apps": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+          },
+          "description": "the other apps whose libraries a process the app starts is made to load first (LD_PRELOAD), sorted, at most 32; libraries outside apps' folders are not named"
+        },
+        "other_app_code": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+          },
+          "description": "the apps whose code files are mapped into this process from their private folders, Google Play services left out, sorted, at most 32"
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "uid_other_apps, preload_other_apps or other_app_code had more apps than the 32 it holds"
+        }
+      },
+      "additionalProperties": true,
+      "description": "whether Android runs the app itself, or another app runs it inside its own",
+      "x-answered": "volunteered on every scan",
+      "x-parts": [
+        "loaded_from",
+        "data_folder",
+        "uid_matches",
+        "uid_other_apps",
+        "preload_other_apps",
+        "other_app_code"
+      ]
     },
     "android.local_addresses": {
       "type": "object",
@@ -1496,10 +1642,13 @@
         },
         "truncated": {
           "type": "boolean"
+        },
+        "call_app": {
+          "$ref": "#/$defs/app_entry"
         }
       },
       "additionalProperties": true,
-      "description": "device-administrator apps, and known remote-control apps installed",
+      "description": "device-administrator apps, known remote-control apps installed, and the app that handles calls",
       "x-answered": "personal: only when the backend requests it and the app enabled it",
       "x-parts": [
         "device_admins",
@@ -1753,6 +1902,9 @@
         },
         "runtime": {
           "$ref": "#/$defs/android.runtime"
+        },
+        "app_host": {
+          "$ref": "#/$defs/android.app_host"
         },
         "local_addresses": {
           "$ref": "#/$defs/android.local_addresses"
@@ -2594,7 +2746,7 @@
         }
       },
       "additionalProperties": true,
-      "description": "device-administrator apps, and known remote-control apps installed; iOS shows an app no other app, so it answers unsupported",
+      "description": "device-administrator apps, known remote-control apps installed, and the app that handles calls; iOS shows an app no other app, so it answers unsupported",
       "x-answered": "personal: only when the backend requests it and the app enabled it"
     },
     "ios.screen_capture": {

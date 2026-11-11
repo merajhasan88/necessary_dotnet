@@ -50,8 +50,8 @@ Each measurement's `x-answered` says it:
 - **when the backend requests it** — ask, in the challenge, for every measurement you rely on, every
   time, and vary the others from scan to scan;
 - **volunteered on every scan** — `device`, `network`, `runtime` (from Android collector 12, iOS collector
-  9), and on iOS `code_integrity`. Rely on one only
-  if you decide to; until you ask for it, its absence or failure does not make a report incomplete;
+  9), on Android `app_host` (from collector 13), and on iOS `code_integrity`. Rely on one only if you
+  decide to; until you ask for it, its absence or failure does not make a report incomplete;
 - **personal** — only when the backend asks for it and the app's developers enabled it, and the
   location only with the person's permission as well. Drop any personal measurement you did not ask
   for before you store or read the report, after checking the signature over the bytes as sent.

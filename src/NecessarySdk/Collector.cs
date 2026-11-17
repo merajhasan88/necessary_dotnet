@@ -35,5 +35,16 @@ namespace Necessary
         /// the app asks, from its own screen; a scan never prompts.
         /// </summary>
         Task<string> RequestLocationPermissionAsync();
+
+        /// <summary>
+        /// Starts or stops counting how the app's screen is touched, for the
+        /// <c>accessibility</c> measurement (Android collector 14):
+        /// <see cref="DeviceTrust.StartAsync"/> starts it while the app enables
+        /// that measurement, so that the counts run from then, not from the first
+        /// scan, and every scan does the same with what the app enables at the
+        /// time. Stopped, what was counted is dropped. Where nothing is counted it
+        /// does nothing.
+        /// </summary>
+        Task WatchTouchesAsync(bool on) => Task.CompletedTask;
     }
 }

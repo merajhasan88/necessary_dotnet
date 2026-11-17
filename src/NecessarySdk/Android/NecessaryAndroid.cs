@@ -21,6 +21,7 @@ namespace Necessary
         private static readonly object Gate = new object();
         private static LifecycleTracker? tracker;
         private static WeakReference<Activity>? current;
+        private static WeakReference<Activity>? resumed;
 
         /// <summary>
         /// Starts tracking the app's activities from <paramref name="activity"/>,
@@ -49,6 +50,22 @@ namespace Necessary
                 lock (Gate)
                 {
                     return current is not null && current.TryGetTarget(out var activity)
+                        && !activity.IsFinishing && !activity.IsDestroyed
+                        ? activity
+                        : null;
+                }
+            }
+        }
+
+        /// <summary>The app's activity that is resumed now, the one the user sees and touches, or null.</summary>
+        internal static Activity? ResumedActivity
+        {
+            get
+            {
+                EnsureTracking(Application.Context as Application);
+                lock (Gate)
+                {
+                    return resumed is not null && resumed.TryGetTarget(out var activity)
                         && !activity.IsFinishing && !activity.IsDestroyed
                         ? activity
                         : null;
@@ -171,6 +188,7 @@ namespace Necessary
             public void OnActivityDestroyed(Activity activity)
             {
                 Forget(activity);
+                TouchWatching.OnDestroyed(activity);
 
                 // Gone for good, not recreated for a configuration change: a
                 // request it launched whose screen never opened would wait for an
@@ -183,9 +201,32 @@ namespace Necessary
 
             public void OnActivityPaused(Activity activity)
             {
+                lock (Gate)
+                {
+                    if (resumed is not null && resumed.TryGetTarget(out var known) && ReferenceEquals(known, activity))
+                    {
+                        resumed = null;
+                    }
+                }
+
+                TouchWatching.OnPaused(activity);
             }
 
-            public void OnActivityResumed(Activity activity) => SetCurrent(activity);
+            public void OnActivityResumed(Activity activity)
+            {
+                SetCurrent(activity);
+                if (activity is ProxyActivity)
+                {
+                    return;
+                }
+
+                lock (Gate)
+                {
+                    resumed = new WeakReference<Activity>(activity);
+                }
+
+                TouchWatching.OnResumed(activity);
+            }
 
             public void OnActivitySaveInstanceState(Activity activity, Bundle outState)
             {

@@ -17,7 +17,7 @@ namespace Necessary
         /// <summary><c>local_addresses</c>: the phone's own IP addresses, link-local ones left out.</summary>
         LocalAddresses,
 
-        /// <summary><c>accessibility</c>: the Accessibility services that are on, and the keyboard in use (Android).</summary>
+        /// <summary><c>accessibility</c>: the Accessibility services that are on, the keyboard in use, and whether a service pressed the app's buttons (Android).</summary>
         Accessibility,
 
         /// <summary><c>notification_access</c>: the apps allowed to read notifications (Android).</summary>
@@ -444,6 +444,9 @@ namespace Necessary
             }
 
             Client.Close();
+
+            // Closed, it counts the app's touches no longer.
+            _ = Swallow(collector.WatchTouchesAsync(false));
         }
 
         /// <summary>Closes the transport: <see cref="Close"/>.</summary>
@@ -613,6 +616,13 @@ namespace Necessary
         private async Task<InstallationIdentity> StartOnce()
         {
             var callGeneration = Volatile.Read(ref generation);
+
+            // Counted from now while the app enables the accessibility measurement.
+            if (personalMeasurements.Contains(PersonalMeasurement.Accessibility))
+            {
+                await collector.WatchTouchesAsync(true);
+            }
+
             await LoadIdentity();
             await Register(callGeneration);
             await Prove();

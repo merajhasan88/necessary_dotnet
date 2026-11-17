@@ -271,7 +271,7 @@ namespace Necessary.Example
                     openTiles.Add(key);
                 }
 
-                Render();
+                header.Post(Render);
             };
             yield return header;
             if (!openTiles.Contains(key))
@@ -370,7 +370,7 @@ namespace Necessary.Example
                     open.Add(title);
                 }
 
-                Render();
+                header.Post(Render);
             };
             content.AddView(header);
             if (!open.Contains(title))
@@ -394,7 +394,10 @@ namespace Necessary.Example
         {
             var button = new Android.Widget.Button(this) { Text = label, Enabled = enabled };
             button.SetAllCaps(false);
-            button.Click += (_, _) => click();
+            // Acted on once the click is over: the screen is drawn again from
+            // scratch, and Android reports no click of a button taken away during
+            // it -- to the accessibility measurement either.
+            button.Click += (_, _) => button.Post(click);
             return button;
         }
 
@@ -415,7 +418,7 @@ namespace Necessary.Example
             toggle.CheckedChange += (_, args) =>
             {
                 changed(args.IsChecked);
-                Render();
+                toggle.Post(Render);
             };
             return toggle;
         }

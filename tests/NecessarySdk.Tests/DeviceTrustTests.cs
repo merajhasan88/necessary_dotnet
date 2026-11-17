@@ -148,6 +148,22 @@ namespace Necessary.Tests
         }
 
         [Fact]
+        public async Task Start_counts_the_touches_from_then_while_the_app_enables_the_accessibility_measurement_and_not_otherwise()
+        {
+            var off = new Collector();
+            await Trust(new Backend(), collector: off).StartAsync();
+            Assert.Empty(off.Watched);
+            var on = new Collector();
+            var trust = Trust(new Backend(), collector: on, personal: new[] { PersonalMeasurement.Accessibility });
+            await trust.StartAsync();
+            Assert.Equal(new[] { true }, on.Watched);
+
+            // Closed, it counts no longer.
+            trust.Close();
+            Assert.Equal(new[] { true, false }, on.Watched);
+        }
+
+        [Fact]
         public async Task A_step_up_key_the_keystore_cannot_vouch_for_is_kept_at_start_and_replaced_only_by_a_reenrolment()
         {
             var backend = new Backend();
@@ -804,6 +820,14 @@ namespace Necessary.Tests
             }
 
             public Task<string> RequestLocationPermissionAsync() => Task.FromResult("none");
+
+            public List<bool> Watched { get; } = new List<bool>();
+
+            public Task WatchTouchesAsync(bool on)
+            {
+                Watched.Add(on);
+                return Task.CompletedTask;
+            }
         }
 
         private sealed class Hints : ReinstallHintReader

@@ -474,6 +474,15 @@ person types. The Accessibility manager's list is compared with the system setti
 service the setting names that the manager does not report was hiding, as an Android bug allowed until
 the December 2022 security patch.
 
+From Android collector 14 it also says which services can press your app's buttons, and whether any did.
+A service that can perform gestures taps and swipes on the screen, and one that reads the screen can click
+a button itself: banking trojans move money that way. From the time the SDK starts with this measurement
+turned on, it counts how your app's screen is touched, and sends the counts with the next scan that
+carries this measurement; each such scan starts them afresh. A touch a service makes comes from no finger,
+stylus or mouse, and from Android 12 Android also marks it as a service's. A click a service performs
+makes no touch at all, and Android reports clicks only while an Accessibility service is on. Counts only:
+no position, no screen and no text.
+
 **When:** your backend asks for it and your app enables it — a personal measurement.
 
 | Field | Type | Needed | Meaning |
@@ -482,6 +491,25 @@ the December 2022 security patch.
 | `settings_only` | list | yes | services the system setting names that the Accessibility manager does not report, as component names |
 | `truncated` | true/false | yes, false | the phone had more than the 32 a list holds |
 | `keyboard` | an app |  | the keyboard in use — the default input method — with its `service` |
+| `tool_services` | list |  | the listed services that declare themselves tools for users with disabilities, as component names: the service's own claim, which Google Play allows only for genuine tools and an app installed from elsewhere can make falsely; left out before Android 12 (Android collector 14) |
+| `gesture_services` | list |  | the listed services that can perform gestures, tapping and swiping on the screen, as component names (Android collector 14) |
+| `touches` | integer, count |  | the touches on your app's screen since the last scan that carried this measurement (Android collector 14) |
+| `touches_injected` | integer, count |  | of those, the touches an Accessibility service made; before Android 12 also the touches sent through adb or with root, which come from no finger either |
+| `clicks_without_touch` | integer, count |  | the clicks your app's screen reported with no touch or key press in the two seconds before them: clicks a service performed |
+| `counted_seconds` | integer, seconds |  | how long the SDK watched your app's screen for these counts |
+
+The counts are left out when the SDK watched no screen of your app's since the last scan that carried
+them, as in a scan made before the app showed one; `clicks_without_touch` alone is left out when the SDK
+could not watch the clicks. The counts are your app's screen's: a touch in another app is not seen.
+
+**As measured**, on Android 10 and Android 16 with a service switched on that can perform gestures and
+read the screen: each tap the service made counted in `touches_injected`, and each click it performed in
+`clicks_without_touch`, also when the click pressed the button that started the scan, which then carried
+it. A finger's touch counted in `touches` only, and a button pressed from a keyboard, which makes a click
+with no touch, counted in neither. On Android 10 taps sent through adb counted in `touches_injected`, as
+the table says; on Android 16 they did not. Android 12 to 15 also mark a finger's touches as a service's
+while a service that can perform gestures is on, which is why a touch counts as a service's only when no
+finger, stylus or mouse is behind it.
 
 ### `notification_access`
 
@@ -576,7 +604,17 @@ iOS cannot measure them.
 
 The installed app: its bundle identifier and version, and the SHA-256 and size of its main executable.
 An executable with code added is larger, and one changed byte changes the hash: compare these with each
-release of yours (integration guide, section 7.2).
+release of yours (integration guide, section 7.2). From iOS collector 10, also whether the main executable
+is stored encrypted. Apple encrypts the code of an app it distributes through the App Store or TestFlight,
+and the phone keeps it encrypted; a copy taken from a phone, decrypted and installed again some other way
+keeps it in the clear. So for an app you ship only through the App Store or TestFlight,
+`executable_encrypted` false means the app is not the copy Apple delivered. Your own development, ad hoc
+and enterprise builds are in the clear too: Read it only against the way you distribute.
+
+**As measured:** a build installed through TestFlight read `true` on an iPhone with iOS 27, and a build
+installed outside the App Store read `false` on an iPhone with iOS 15.8. On the TestFlight build
+`code_integrity` left the main executable out, as Apple keeps it encrypted on disk, so `app_complete` was
+false there; on the other build it compared every image of the app.
 
 **When:** your backend asks for it.
 
@@ -587,6 +625,7 @@ release of yours (integration guide, section 7.2).
 | `version_name` | text |  | the app's version (`CFBundleShortVersionString`) |
 | `version_code` | text |  | the app's build number (`CFBundleVersion`) |
 | `executable_bytes` | integer, bytes |  | the main executable's size |
+| `executable_encrypted` | true/false |  | the main executable is stored encrypted, as Apple stores an app it distributes through the App Store or TestFlight (iOS collector 10) |
 
 ### `code_signing`
 

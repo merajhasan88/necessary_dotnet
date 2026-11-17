@@ -32,8 +32,10 @@ namespace Necessary
         // reports the app's code coverage image by image, and one location read
         // answers both location measurements; 6 sends the page size with device,
         // and asks screen capture of the screen showing the app; 9 adds the
-        // runtime measurement, volunteered on every scan.
-        private const int CollectorVersion = 9;
+        // runtime measurement, volunteered on every scan; 10 says in app_identity
+        // whether the main executable is stored encrypted, as Apple stores an app
+        // it distributes through the App Store or TestFlight.
+        private const int CollectorVersion = 10;
         private const int MaxTextLength = 8192;
 
         private static readonly string[] VolunteeredProbes = { "device", "network", "runtime" };

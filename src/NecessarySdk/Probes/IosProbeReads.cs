@@ -141,6 +141,63 @@ namespace Necessary
         }
 
         /// <summary>
+        /// Whether the main executable's code is stored encrypted, as Apple stores
+        /// an app it distributes through the App Store or TestFlight (iOS collector
+        /// 10). <paramref name="machHeader"/> is the image's Mach-O header and load
+        /// commands as loaded: the loader decrypts the code's pages, never the
+        /// LC_ENCRYPTION_INFO_64 command, so its <c>cryptid</c> is the stored
+        /// file's. A copy taken from a phone and decrypted keeps the command with
+        /// <c>cryptid</c> 0; a build Apple did not distribute has 0 or no such
+        /// command. Null when the bytes are not a 64-bit Mach-O header with every
+        /// command inside them: not read, never a clean answer.
+        /// </summary>
+        public static bool? ExecutableEncrypted(IReadOnlyList<byte> machHeader)
+        {
+            const uint MhMagic64 = 0xfeedfacf;
+            const uint LcEncryptionInfo64 = 0x2c;
+            const int HeaderSize = 32; // mach_header_64
+            if (machHeader is null)
+            {
+                return null;
+            }
+
+            uint? Word(long at) => at >= 0 && at + 4 <= machHeader.Count
+                ? machHeader[(int)at] | ((uint)machHeader[(int)at + 1] << 8) | ((uint)machHeader[(int)at + 2] << 16) | ((uint)machHeader[(int)at + 3] << 24)
+                : null;
+            if (Word(0) != MhMagic64 || Word(16) is not uint count || Word(20) is not uint commandBytes
+                || HeaderSize + (long)commandBytes > machHeader.Count)
+            {
+                return null;
+            }
+
+            var end = HeaderSize + (long)commandBytes;
+            long cursor = HeaderSize;
+            var encrypted = false;
+            for (uint i = 0; i < count; i++)
+            {
+                if (Word(cursor) is not uint command || Word(cursor + 4) is not uint size || size < 8 || cursor + size > end)
+                {
+                    return null;
+                }
+
+                if (command == LcEncryptionInfo64)
+                {
+                    // encryption_info_command_64: cmd, cmdsize, cryptoff, cryptsize, cryptid, pad.
+                    if (size < 20 || Word(cursor + 16) is not uint cryptId)
+                    {
+                        return null;
+                    }
+
+                    encrypted = encrypted || cryptId != 0;
+                }
+
+                cursor += size;
+            }
+
+            return encrypted;
+        }
+
+        /// <summary>
         /// Where the arm64 image starts in its file: 0 when the file is a 64-bit
         /// Mach-O image; the arm64 slice's offset in a universal ("fat") file, the
         /// form a build keeps its frameworks in when nothing thinned them (an ad
@@ -226,8 +283,8 @@ namespace Necessary
 
         /// <summary>
         /// Whether the file on disk is the build that was loaded: its LC_UUID
-        /// against the loaded image's. An app updated while it ran -- TrollStore
-        /// installs over a running app, an in-place update, a development install
+        /// against the loaded image's. An app updated while it ran -- an install
+        /// over the running app, an in-place update, a development install
         /// -- runs the old code with the new file on disk, and the two then differ
         /// in many bytes nobody changed: such an image is skipped with its __text
         /// bytes, never compared. Null when they match, or the loaded image has no

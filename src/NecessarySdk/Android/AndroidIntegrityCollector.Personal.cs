@@ -296,7 +296,10 @@ namespace Necessary
         /// two ways banking trojans read what is typed. The Accessibility manager's
         /// list is compared with the system setting it is built from: a service
         /// the setting names that the manager does not report is hiding, as an
-        /// Android bug allowed until the December 2022 patch.
+        /// Android bug allowed until the December 2022 patch. Which services
+        /// declare themselves tools for users with disabilities, which can perform
+        /// gestures, and how the app's screen was touched since the last read
+        /// (TouchCounts): trojans press an app's buttons themselves.
         /// </summary>
         private JsonObject ProbeAccessibility()
         {
@@ -306,6 +309,11 @@ namespace Necessary
             }
 
             var services = new JsonArray();
+
+            // Beside the list, by component name, so that a backend that knows
+            // only the entries' four fields takes the report.
+            var tools = new JsonArray();
+            var gestures = new JsonArray();
             var reported = new HashSet<string>(StringComparer.Ordinal);
             var undescribed = 0;
             foreach (var info in manager.GetEnabledAccessibilityServiceList(Android.AccessibilityServices.FeedbackFlags.AllMask) ?? new List<AccessibilityServiceInfo>())
@@ -324,7 +332,8 @@ namespace Necessary
                     continue;
                 }
 
-                if (!reported.Add(new ComponentName(package, name).FlattenToString()))
+                var listedAs = new ComponentName(package, name).FlattenToString();
+                if (!reported.Add(listedAs))
                 {
                     continue;
                 }
@@ -332,6 +341,19 @@ namespace Necessary
                 if (services.Count < MaxApps)
                 {
                     services.Add(AppEntry(package, name, service.ApplicationInfo));
+
+                    // The service's own declaration, Android 12 and later: Google
+                    // Play allows it only for genuine tools; an app from elsewhere
+                    // may declare it falsely.
+                    if (OperatingSystem.IsAndroidVersionAtLeast(31) && info.IsAccessibilityTool)
+                    {
+                        tools.Add(Take(listedAs, 200));
+                    }
+
+                    if ((info.Capabilities & AccessibilityServiceCapabilities.CanPerformGestures) != 0)
+                    {
+                        gestures.Add(Take(listedAs, 200));
+                    }
                 }
             }
 
@@ -353,10 +375,27 @@ namespace Necessary
                 ["status"] = "ok",
                 ["services"] = services,
                 ["settings_only"] = settingsOnly,
+                ["gesture_services"] = gestures,
 
                 // More than this collector sends: the backend is told, never left to guess.
                 ["truncated"] = reported.Count > MaxApps || hidden.Count > MaxApps,
             };
+
+            // Before Android 12 no service declares it: left out, never an empty list.
+            if (OperatingSystem.IsAndroidVersionAtLeast(31))
+            {
+                result["tool_services"] = tools;
+            }
+
+            // Left out when nothing watched the app's screen since the last read.
+            if (touches.Take() is JsonObject counts)
+            {
+                foreach (var count in counts.ToList())
+                {
+                    result[count.Key] = count.Value?.DeepClone();
+                }
+            }
+
             var keyboard = Settings.Secure.GetString(context.ContentResolver, Settings.Secure.DefaultInputMethod);
             var component = keyboard is null ? null : ComponentName.UnflattenFromString(keyboard.Trim());
             if (component?.PackageName is string keyboardPackage)

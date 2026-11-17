@@ -386,6 +386,39 @@ namespace Necessary.Tests
             Assert.Null(MachOUuid(Array.Empty<byte>()));
         }
 
+        // Collector 10: whether Apple stores the app's code encrypted, from its load commands.
+        private static IEnumerable<byte> Le(long value) => Enumerable.Range(0, 4).Select(i => (byte)((value >> (8 * i)) & 0xff));
+
+        private static byte[] Header(byte[][] commands, long magic = 0xfeedfacf)
+        {
+            var body = commands.SelectMany(command => command).ToArray();
+
+            // magic, cputype arm64, cpusubtype, filetype MH_EXECUTE, ncmds, sizeofcmds, flags, reserved
+            return Le(magic).Concat(Le(0x0100000c)).Concat(Le(0)).Concat(Le(2)).Concat(Le(commands.Length)).Concat(Le(body.Length))
+                .Concat(Le(0)).Concat(Le(0)).Concat(body).ToArray();
+        }
+
+        private static readonly byte[] Segment = Le(0x19).Concat(Le(72)).Concat(new byte[64]).ToArray(); // LC_SEGMENT_64, no sections
+        private static readonly byte[] UuidCommand = Le(0x1b).Concat(Le(24)).Concat(Enumerable.Repeat((byte)7, 16)).ToArray(); // LC_UUID
+
+        private static byte[] Encryption(long cryptId) =>
+            Le(0x2c).Concat(Le(24)).Concat(Le(16384)).Concat(Le(1_048_576)).Concat(Le(cryptId)).Concat(Le(0)).ToArray();
+
+        [Fact]
+        public void Whether_the_main_executable_is_stored_encrypted_is_read_from_its_load_commands()
+        {
+            Assert.True(ExecutableEncrypted(Header(new[] { Segment, Encryption(1), UuidCommand })));  // an App Store or TestFlight build
+            Assert.False(ExecutableEncrypted(Header(new[] { Segment, Encryption(0), UuidCommand }))); // a copy decrypted, or a build Apple did not distribute
+            Assert.False(ExecutableEncrypted(Header(new[] { Segment, UuidCommand })));                // no encryption command: stored in the clear
+            var whole = Header(new[] { Segment, Encryption(1) });
+            Assert.Null(ExecutableEncrypted(whole.Take(whole.Length - 4).ToArray()));                // commands cut short: not read, never clean
+            Assert.Null(ExecutableEncrypted(Header(new[] { Segment, Encryption(1) }, magic: 0xfeedface))); // a 32-bit header: not read
+            var running = Header(new[] { Segment, Encryption(1) });
+            running[32 + 72 + 4] = 200;                                                               // the encryption command claims to run past the commands
+            Assert.Null(ExecutableEncrypted(running));
+            Assert.Null(ExecutableEncrypted(Array.Empty<byte>()));                                   // nothing: not read
+        }
+
         [Fact]
         public void An_image_is_compared_only_with_the_build_that_is_running()
         {
@@ -395,7 +428,7 @@ namespace Necessary.Tests
             Assert.NotNull(BuildProblem(Running, null, 4096)); // a file with no LC_UUID is not the image loaded
             Assert.Null(BuildProblem(null, Updated, 4096)); // a loaded image with no LC_UUID: nothing to tell by
 
-            // The TrollStore case of 2026-10-31: the main executable skipped, no
+            // An app installed over itself while it ran: the main executable skipped, no
             // difference invented, incomplete.
             var r = AppCoverage(new[] { Image("Runner", ImageOutcome.Skipped(191_160, other!.Reason), main: true), Engine, App }, 435);
             Assert.True(AddsUp(r) && Bool(r, "app_complete") == false && Int(r, "app_diff_bytes") == 0

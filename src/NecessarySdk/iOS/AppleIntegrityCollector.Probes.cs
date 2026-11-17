@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -183,7 +184,79 @@ namespace Necessary
                 result["executable_sha256"] = string.Empty;
             }
 
+            // Whether Apple stores the app's code encrypted (collector 10): from the
+            // main executable's load commands as loaded, which keep the file's
+            // LC_ENCRYPTION_INFO_64. Not read is unread, never false.
+            var (header, why) = MainExecutableHeader();
+            if (header is null)
+            {
+                result["unread"] = new JsonObject { ["executable_encrypted"] = why };
+            }
+            else if (ExecutableEncrypted(header) is bool encrypted)
+            {
+                result["executable_encrypted"] = encrypted;
+            }
+            else
+            {
+                result["unread"] = new JsonObject { ["executable_encrypted"] = "its load commands are not a 64-bit Mach-O header's" };
+            }
+
             return result;
+        }
+
+        /// <summary>
+        /// The main executable's Mach-O header and load commands as loaded, found
+        /// by its name in the bundle, as code_integrity finds it; or why not. An
+        /// image dyld names no path for is counted, so a main executable not found
+        /// among the named ones says so rather than reading as absent.
+        /// </summary>
+        private static (byte[]? Header, string Why) MainExecutableHeader()
+        {
+            const uint MhMagic64 = 0xfeedfacf;
+            const int HeaderSize = 32; // mach_header_64
+            var bundlePath = NSBundle.MainBundle.BundlePath;
+            var mainName = Path.GetFileName(NSBundle.MainBundle.ExecutablePath ?? string.Empty);
+            if (string.IsNullOrEmpty(mainName))
+            {
+                return (null, "the bundle names no executable");
+            }
+
+            var unnamed = 0;
+            var count = Native._dyld_image_count();
+            for (uint index = 0; index < count; index++)
+            {
+                var namePointer = Native._dyld_get_image_name(index);
+                if (namePointer == IntPtr.Zero)
+                {
+                    unnamed++;
+                    continue;
+                }
+
+                var path = Marshal.PtrToStringUTF8(namePointer) ?? string.Empty;
+                if (!path.StartsWith(bundlePath, StringComparison.Ordinal) || BundleLabel(path, bundlePath) != mainName)
+                {
+                    continue;
+                }
+
+                var header = Native._dyld_get_image_header(index);
+                if (header == IntPtr.Zero)
+                {
+                    return (null, "dyld gave no header for the main executable");
+                }
+
+                if ((uint)Marshal.ReadInt32(header, 0) != MhMagic64)
+                {
+                    return (Array.Empty<byte>(), string.Empty);
+                }
+
+                var bytes = new byte[HeaderSize + (uint)Marshal.ReadInt32(header, 20)];
+                Marshal.Copy(header, bytes, 0, bytes.Length);
+                return (bytes, string.Empty);
+            }
+
+            return (null, unnamed > 0
+                ? "not among the images dyld named; it gave no name for " + unnamed.ToString(CultureInfo.InvariantCulture)
+                : "the main executable is not among the loaded images");
         }
 
         private static byte[]? ReadExecutable()

@@ -181,6 +181,9 @@ and `body_sha256` (the SHA-256 of its exact body).
   request — same method, path, query and body — under the same account session, within a couple of
   minutes, and your decision on that report allowed the request; and mark the report used in the same
   transaction, so that it approves one request, once.
+- **Ask for `accessibility` in such a scan** where your app enables it, on Android: its counts run up to
+  the scan, and a click an Accessibility service performs on the button that starts the scan is counted
+  in that same scan, as measured on Android 10 and Android 16.
 
 ---
 
@@ -553,7 +556,7 @@ or keep their scans apart as older evidence.
 
 | Probe | What it tells you | Fields |
 |---|---|---|
-| `app_identity` | the installed app and its executable's hash | `bundle_id`, `executable_sha256`, `version_name`, `version_code`, `executable_bytes` |
+| `app_identity` | the installed app, its executable's hash, and whether Apple stores its code encrypted | `bundle_id`, `executable_sha256`, `version_name`, `version_code`, `executable_bytes`, `executable_encrypted` |
 | `code_signing` | the executable's own code signature | `signing_identifier`, `team_identifier`, `get_task_allow`, `signed`, `signature_absent`, `signature_parse_error`, `code_directory_flags`, `entitlement_count` |
 | `debugger` | a debugger tracing the process | `traced` |
 | `jailbreak_files` | known jailbreak paths that exist | `found_paths`, `checked_count` |
@@ -594,8 +597,10 @@ what your own server observed, where the requests come from, and what happened a
   on Android, are another app running yours (`app_host`), the runtime's debugger thread in a release
   build on a phone that is not debuggable (`debug_state`), a call app that is not part of the system
   and that no app store installed (`other_access`), or a phone or tablet whose processor is an x86 one or
-  runs under a hypervisor (`emulator`, whatever its build values say). Genuine users can show even these;
-  section 7.7 says who, and what to do.
+  runs under a hypervisor (`emulator`, whatever its build values say), or taps and clicks an
+  Accessibility service made in your app (`accessibility`); nor, on iOS, is the code of an app you ship
+  through the App Store or TestFlight stored in the clear (`app_identity`). Genuine users can show even
+  these; section 7.7 says who, and what to do.
 - **Compare the app with your release** — its files, its code and its size, as section 7.2 describes. A
   modified app is the most direct attack on everything else here: it holds a genuine key.
 - **Compare a phone with itself.** A sudden change between one phone's reports — another signing
@@ -624,8 +629,12 @@ normal looks like.
      APK you ship and its hash (`split_apks`); and, where you distribute through a store, that store as
      `installer_package`.
    - iOS: the main executable's SHA-256 and its **size in bytes** (`executable_sha256`,
-     `executable_bytes`) — an executable with code added is larger; and your team identifier
-     (`team_identifier`, in `code_signing`).
+     `executable_bytes`) — an executable with code added is larger; your team identifier
+     (`team_identifier`, in `code_signing`); and, for an app you ship through the App Store or TestFlight,
+     whether its code is stored encrypted (`executable_encrypted`), as Apple stores what it delivers. A
+     copy decrypted and installed some other way is not the one Apple delivered, whatever else it keeps.
+     As measured: a build installed through TestFlight read true on an iPhone with iOS 27, and a build
+     installed outside the App Store false on an iPhone with iOS 15.8.
 
    A report whose files match no release of yours is not your app as you built it.
 2. **The code in memory** (`code_integrity`). The plugin compares the app's code as it runs with the
@@ -634,7 +643,10 @@ normal looks like.
    what was loaded: on iOS `app_images_expected` counts the app's own images in memory and
    `app_expected_bytes` their code — an injected library is one image more and its code more than your
    release ever loads; on Android `app_expected_bytes` is the app's own native code in memory. Compare
-   both with your release's record. A comparison short of complete measured only part of the code.
+   both with your release's record. A comparison short of complete measured only part of the code. On
+   iOS, a build from the App Store or TestFlight is one: its main executable is encrypted on disk, so it is
+   left out and named in `app_images_not_compared`, and `app_complete` is false on every phone, as your
+   release's record shows.
 3. **The memory around it** (`exec_mappings`, on Android). Code loaded at run time needs executable
    memory: memory both writable and executable (`wx_bytes`, `wx_size_classes`, `wx_largest_bytes`) and
    executable regions with no file behind them (`anon_exec_unlabeled_bytes`). Some runtimes compile
@@ -738,7 +750,13 @@ it, and give them a way through that a fraudster cannot take.
 | Another app running yours: `app_host` | Users of an app that clones others, to sign in to a second account | `loaded_from`, `data_folder` and the lists name another app. A phone's own second user, dual-app feature or work profile does not show it. Names in `uid_other_apps` may be your own apps, where they share a user ID | Treat it as unsafe whatever the user intends, since the other app sees and can change everything your app shows and sends. Ask the user to open your app directly, not from inside another app, before anything sensitive. Do not count your own apps in `uid_other_apps` |
 | The debugger thread in a release build: `debug_state`, `jdwp_thread` | Your own debuggable builds; phones whose system is debuggable, such as developer builds of Android, some custom systems and emulators | `debuggable` in `app_identity`, and `ro.debuggable` in `system_properties` | Keep debuggable builds off your production backend. Judge a debuggable system as a reading of its own. In a release build on a system that is not debuggable no genuine case is known, so refuse. Where `ro.debuggable` could not be read, ask for another scan rather than decide |
 | A call app from outside a store: `other_access`, `call_app` | Users who chose another call app, from a store other than the ones you expect, or from a website or a computer | `system` and `installer`. A store names itself; a website or a computer names none | List the stores you accept, including phone makers' stores and the open-source ones your customers use. For a call app from none of them, do not refuse the user: Confirm sensitive actions another way than a call, and tell them that calls to your number may not reach you |
+| Taps and clicks a service made: `accessibility`, `touches_injected` or `clicks_without_touch` above 0 | Users of a screen reader, voice control or switch control, which tap and click for them; users of apps that automate taps; before Android 12, testers who send taps through adb | `services`, with `tool_services`, `gesture_services`, `system` and `installer`. A tool for users with disabilities declares itself one, and Google Play allows that only for genuine tools; an app installed from elsewhere can declare it falsely. The counts cover `counted_seconds` | When every service that is on is a declared tool from a store you accept, do not refuse: Confirm sensitive actions with the step-up approval and a biometric (section 3), which no service can give for the user. When a service that is not, or that no store installed, can perform gestures and the counts are above 0, someone else may be using the app: Refuse what matters. A service that is on, with counts of 0, pressed nothing |
+| An iOS app's code in the clear: `app_identity`, `executable_encrypted` false | Users of your own development, ad hoc or enterprise builds, such as your testers, which Apple never encrypts | `code_signing` names your team; your distribution says which builds went through the App Store or TestFlight | Read it only for an app you ship through the App Store or TestFlight. There, the code in the clear is a copy that is not the one Apple delivered: Refuse what matters. Test your other builds against a backend of your own |
 
+- **What the touch counts showed on phones** (Android 10 and Android 16, a service that taps and clicks
+  switched on): its taps counted in `touches_injected` and its clicks in `clicks_without_touch`; a
+  finger's touches and a button pressed from a keyboard counted in neither. Before Android 12, taps sent
+  through adb counted as a service's too.
 - **Refuse the action, not the user.** A strong reading can hold a payment while the user still reads
   their account.
 - **Tell the user only what to do next,** as section 7.4 says, such as opening the app directly, using a
@@ -765,7 +783,7 @@ your app asks.
 | Probe | What it tells you | Fields | Platforms |
 |---|---|---|---|
 | `local_addresses` | the phone's own IP addresses, link-local ones left out | `addresses` (`interface`, `address`) | both |
-| `accessibility` | the Accessibility services that are on, and the keyboard in use | `services`, `keyboard`, `settings_only`, `truncated` | Android |
+| `accessibility` | the Accessibility services that are on, the keyboard in use, and whether a service pressed the app's buttons | `services`, `keyboard`, `settings_only`, `truncated`, `tool_services`, `gesture_services`, `touches`, `touches_injected`, `clicks_without_touch`, `counted_seconds` | Android |
 | `notification_access` | the apps allowed to read notifications, one-time codes among them | `listeners`, `truncated` | Android |
 | `other_access` | device-administrator apps, known remote-control apps installed, and the app that handles calls | `device_admins`, `remote_access_apps`, `truncated`, `call_app` | Android |
 | `screen_capture` | the screen being recorded, mirrored or cast | `recording`, `external_displays`, `recording_status` | both |
@@ -779,6 +797,9 @@ your app asks.
   `unavailable` — from iOS only `unavailable`).
 - iOS shows an app no other app: `accessibility`, `notification_access` and `other_access` answer
   `unsupported` there.
+- `accessibility` counts how the app's own screen is touched, from the time the SDK starts with it
+  turned on until the next scan that carries it: counts only, never where on the screen, what was shown
+  or what was typed. Turned off, what was counted is dropped.
 - From plugin versions Android 8 and iOS 5 both location answers describe one fix, read once per scan,
   and carry its time, `fix_time` (Unix seconds): two different times are two observations, not one.
   Asking for `mock_location` alone never sends coordinates. On Android a location source the plugin

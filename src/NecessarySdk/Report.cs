@@ -113,7 +113,7 @@ namespace Necessary
         /// </summary>
         public static IReadOnlyList<KeyValuePair<string, string[]>> ShortenableLists { get; } = new[]
         {
-            new KeyValuePair<string, string[]>("accessibility", new[] { "services", "settings_only" }),
+            new KeyValuePair<string, string[]>("accessibility", new[] { "services", "settings_only", "tool_services", "gesture_services" }),
             new KeyValuePair<string, string[]>("notification_access", new[] { "listeners" }),
             new KeyValuePair<string, string[]>("other_access", new[] { "device_admins", "remote_access_apps" }),
         };

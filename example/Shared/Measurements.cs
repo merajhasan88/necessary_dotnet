@@ -84,7 +84,7 @@ namespace Necessary.Example
         public static readonly IReadOnlyList<MeasurementInfo> Personal = new[]
         {
             new MeasurementInfo("local_addresses", "Local addresses", "The phone's own IP addresses, link-local ones left out.", MeasurementGroup.Personal),
-            new MeasurementInfo("accessibility", "Accessibility", "The Accessibility services that are on, and the keyboard in use. Android only.", MeasurementGroup.Personal),
+            new MeasurementInfo("accessibility", "Accessibility", "The Accessibility services that are on, the keyboard in use, and whether a service pressed this app's buttons. Android only.", MeasurementGroup.Personal),
             new MeasurementInfo("notification_access", "Notification access", "The apps allowed to read notifications. Android only.", MeasurementGroup.Personal),
             new MeasurementInfo("other_access", "Other access", "Device-administrator apps, known remote-control apps installed, and the app that handles calls. Android only.", MeasurementGroup.Personal),
             new MeasurementInfo("screen_capture", "Screen capture", "The screen being recorded, mirrored or cast.", MeasurementGroup.Personal),

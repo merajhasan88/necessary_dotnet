@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.12
+
+- iOS: `app_identity` says whether the app's main executable is stored encrypted (`executable_encrypted`),
+  as Apple stores an app it distributes through the App Store or TestFlight. A copy decrypted and installed
+  some other way, and a development, ad hoc or enterprise build, keeps it in the clear.
+  `doc/measurements.md` says how to read it.
+- Android: `accessibility` names the services that declare themselves tools for users with disabilities
+  (`tool_services`, Android 12 and later) and those that can tap and swipe on the screen
+  (`gesture_services`), and says whether a service pressed your app's buttons: with the measurement on
+  when `StartAsync()` runs, the SDK counts the touches on your app's screen (`touches`), those an
+  Accessibility service made (`touches_injected`) and the clicks with no touch or key press before them
+  (`clicks_without_touch`), over `counted_seconds`, and each scan that carries the measurement starts
+  them afresh. Counts only: no position, no screen and no text, and nothing is counted while the
+  measurement is off. `doc/measurements.md` says how to read them, and the integration guide's section
+  7.7 who shows them genuinely.
+- `INativeIntegrityCollector` has `WatchTouchesAsync`, which starts and stops those counts; by default it
+  does nothing.
+- `doc/measurements.md` and the integration guide say what both readings showed on phones: a service's
+  taps and clicks counted on Android 10 and Android 16, a finger's touches and a keyboard's presses not;
+  a TestFlight build's code stored encrypted on iOS 27 and an app installed outside the App Store in the
+  clear on iOS 15.8. The guide also says that a build from the App Store or TestFlight never compares its
+  main executable, so `app_complete` is false there on every phone.
+- The Android example app acts on a button, a switch or a heading once its click is over.
+- The README gives this package's collector versions, 14 and 10.
+- The iOS collector is version 10; the Android collector is version 14.
+
 ## 0.1.11
 
 - Android: every scan carries `app_host`, whether another app runs yours inside its own: where Android says

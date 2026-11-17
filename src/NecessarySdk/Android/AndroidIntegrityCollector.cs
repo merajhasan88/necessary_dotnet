@@ -49,7 +49,12 @@ namespace Necessary
         //      other_access names the app that handles calls; emulator reads the
         //      processor and the form of the device; a command that exits with an
         //      error is no reading.
-        private const int CollectorVersion = 13;
+        // 14 = accessibility names the services that declare themselves tools for
+        //      users with disabilities and those that can perform gestures, and
+        //      counts the touches on the app's screen, those an Accessibility
+        //      service made, and the clicks with no touch before them
+        //      (TouchCounts).
+        private const int CollectorVersion = 14;
 
         // Apps listed per capability, at most.
         private const int MaxApps = 32;
@@ -119,6 +124,11 @@ namespace Necessary
         // person chooses; the collector itself never asks.
         private int locationRequestPending;
 
+        // How the app's screen is touched, for the accessibility measurement:
+        // counted only while the app enables that measurement.
+        private readonly TouchCounts touches = new TouchCounts((int)Android.OS.Build.VERSION.SdkInt, Android.OS.SystemClock.ElapsedRealtime);
+        private volatile bool touchesWanted;
+
         /// <summary>The collector of the app <paramref name="context"/> belongs to.</summary>
         public AndroidIntegrityCollector(Context context)
         {
@@ -145,7 +155,50 @@ namespace Necessary
 
             var optional = optionalProbes ?? Array.Empty<string>();
             var enabled = new HashSet<string>(enabledMeasurements ?? Array.Empty<string>(), StringComparer.Ordinal);
-            return AndroidNative.Run(() => Collect(requiredProbes, challengeNonce, optional, enabled));
+            return CollectWatchedAsync(requiredProbes, challengeNonce, optional, enabled);
+        }
+
+        /// <inheritdoc />
+        public Task WatchTouchesAsync(bool on) => on == touchesWanted
+            ? Task.CompletedTask
+            : NecessaryAndroid.OnMainThreadAsync(() =>
+            {
+                if (on != touchesWanted)
+                {
+                    touchesWanted = on;
+                    if (on)
+                    {
+                        TouchWatching.Add(touches);
+                    }
+                    else
+                    {
+                        TouchWatching.Remove(touches);
+                    }
+                }
+
+                return true;
+            });
+
+        // Before the scan, the touches are watched while the app enables the
+        // accessibility measurement; the main thread is asked only when that
+        // changes.
+        private async Task<JsonObject> CollectWatchedAsync(
+            IReadOnlyList<string> requiredProbes,
+            string challengeNonce,
+            IReadOnlyList<string> optional,
+            HashSet<string> enabled)
+        {
+            try
+            {
+                await WatchTouchesAsync(enabled.Contains("accessibility")).ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Not watched, the counts are left out; the scan goes on.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+            }
+
+            return await AndroidNative.Run(() => Collect(requiredProbes, challengeNonce, optional, enabled)).ConfigureAwait(false);
         }
 
         /// <inheritdoc />

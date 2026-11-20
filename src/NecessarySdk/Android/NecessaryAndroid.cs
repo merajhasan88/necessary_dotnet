@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Android.App;
@@ -22,6 +23,7 @@ namespace Necessary
         private static LifecycleTracker? tracker;
         private static WeakReference<Activity>? current;
         private static WeakReference<Activity>? resumed;
+        private static readonly List<WeakReference<Activity>> Live = new List<WeakReference<Activity>>();
 
         /// <summary>
         /// Starts tracking the app's activities from <paramref name="activity"/>,
@@ -36,6 +38,7 @@ namespace Necessary
 
             EnsureTracking(activity.Application);
             SetCurrent(activity);
+            Remember(activity);
         }
 
         /// <summary>The application context.</summary>
@@ -70,6 +73,25 @@ namespace Necessary
                         ? activity
                         : null;
                 }
+            }
+        }
+
+        /// <summary>Whether <paramref name="root"/> is the window of one of the app's activities that are alive.</summary>
+        internal static bool IsActivityWindow(Android.Views.View root)
+        {
+            lock (Gate)
+            {
+                Live.RemoveAll(reference => !reference.TryGetTarget(out _));
+                foreach (var reference in Live)
+                {
+                    if (reference.TryGetTarget(out var activity) && activity.Window?.PeekDecorView() is Android.Views.View decor
+                        && TouchWatching.Same(decor, root))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
             }
         }
 
@@ -161,10 +183,22 @@ namespace Necessary
             }
         }
 
+        private static void Remember(Activity activity)
+        {
+            lock (Gate)
+            {
+                if (!Live.Exists(reference => reference.TryGetTarget(out var known) && ReferenceEquals(known, activity)))
+                {
+                    Live.Add(new WeakReference<Activity>(activity));
+                }
+            }
+        }
+
         private static void Forget(Activity activity)
         {
             lock (Gate)
             {
+                Live.RemoveAll(reference => !reference.TryGetTarget(out var known) || ReferenceEquals(known, activity));
                 if (current is not null && current.TryGetTarget(out var known) && ReferenceEquals(known, activity))
                 {
                     current = null;
@@ -182,6 +216,7 @@ namespace Necessary
                 }
 
                 SetCurrent(activity);
+                Remember(activity);
                 ActivityCreated?.Invoke(activity);
             }
 

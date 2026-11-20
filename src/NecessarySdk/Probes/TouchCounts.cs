@@ -37,6 +37,9 @@ namespace Necessary
         /// <summary>How long after a touch or key its click may come.</summary>
         public const long ClickAfterInputMs = 2000;
 
+        /// <summary>Why the counts are left out when a window of the app's was not watched.</summary>
+        public const string UnwatchedWindow = "a window of the app's that could not be watched was open";
+
         private readonly object gate = new object();
         private readonly int sdkInt;
         private readonly Func<long> clock;
@@ -51,6 +54,11 @@ namespace Necessary
         // The clicks were not watched for some of the time: their count is left out.
         private bool clicksMissed;
         private bool watchingClicks;
+
+        // A window of the app's that takes touches was not watched for some of the
+        // time: every count is left out, with why, never short.
+        private bool windowsMissed;
+        private bool unwatchedOpen;
 
         /// <summary>Counts for Android <paramref name="sdkInt"/>, timed by <paramref name="clock"/> in milliseconds.</summary>
         public TouchCounts(int sdkInt, Func<long> clock)
@@ -88,6 +96,19 @@ namespace Necessary
             }
         }
 
+        /// <summary>Whether a window of the app's that takes touches, and cannot be watched, is open now.</summary>
+        public void SetUnwatchedWindows(bool open)
+        {
+            lock (gate)
+            {
+                unwatchedOpen = open;
+                if (open)
+                {
+                    windowsMissed = true;
+                }
+            }
+        }
+
         /// <summary>The app no longer counts: what was counted is dropped.</summary>
         public void Discard()
         {
@@ -102,6 +123,7 @@ namespace Necessary
                 }
 
                 clicksMissed = watched && !watchingClicks;
+                windowsMissed = unwatchedOpen;
             }
         }
 
@@ -152,7 +174,9 @@ namespace Necessary
         /// The counts since the last read, which start afresh: <c>touches</c>,
         /// <c>touches_injected</c>, <c>clicks_without_touch</c> (left out when the
         /// clicks were not watched all the time) and <c>counted_seconds</c>; null
-        /// when no window was watched since the last read.
+        /// when no window was watched since the last read. While a window of the
+        /// app's that could not be watched was open, the three counts are left out
+        /// and named in <c>unread</c>, with why.
         /// </summary>
         public JsonObject? Take()
         {
@@ -165,14 +189,24 @@ namespace Necessary
 
                 var now = clock();
                 var ms = watchedMs + (watchingSince is long since ? now - since : 0L);
-                var counts = new JsonObject
+                var counts = new JsonObject();
+                if (windowsMissed)
                 {
-                    ["touches"] = touches,
-                    ["touches_injected"] = injected,
-                };
-                if (!clicksMissed)
+                    counts["unread"] = new JsonObject
+                    {
+                        ["touches"] = UnwatchedWindow,
+                        ["touches_injected"] = UnwatchedWindow,
+                        ["clicks_without_touch"] = UnwatchedWindow,
+                    };
+                }
+                else
                 {
-                    counts["clicks_without_touch"] = untouchedClicks;
+                    counts["touches"] = touches;
+                    counts["touches_injected"] = injected;
+                    if (!clicksMissed)
+                    {
+                        counts["clicks_without_touch"] = untouchedClicks;
+                    }
                 }
 
                 counts["counted_seconds"] = (int)(Math.Max(ms, 0L) / 1000);
@@ -185,6 +219,7 @@ namespace Necessary
 
                 watched = watchingSince is not null;
                 clicksMissed = watched && !watchingClicks;
+                windowsMissed = unwatchedOpen;
                 return counts;
             }
         }

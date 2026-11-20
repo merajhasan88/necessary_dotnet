@@ -54,7 +54,8 @@ namespace Necessary
         //      counts the touches on the app's screen, those an Accessibility
         //      service made, and the clicks with no touch before them
         //      (TouchCounts).
-        private const int CollectorVersion = 14;
+        // 15 = other_access names the default SMS app (sms_app).
+        private const int CollectorVersion = 15;
 
         // Apps listed per capability, at most.
         private const int MaxApps = 32;

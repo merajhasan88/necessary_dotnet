@@ -572,5 +572,41 @@ namespace Necessary.Tests
             Assert.True(IsError(MockLocation(scan.Value)));
             Assert.Equal(1, reads);
         }
+
+        // Collector 15: the apps that handle calls and texts.
+        private static JsonObject Entry(string package) => new JsonObject { ["package"] = package, ["system"] = false, ["installer"] = string.Empty };
+
+        private static JsonObject OtherAccess() => new JsonObject { ["status"] = "ok", ["device_admins"] = new JsonArray(), ["remote_access_apps"] = new JsonArray(), ["truncated"] = false };
+
+        [Fact]
+        public void The_call_and_SMS_apps_are_named_and_left_out_where_the_phone_names_none()
+        {
+            var both = WithDefaultApps(OtherAccess(), Outcome<string?>.Success("com.example.dialer"), Outcome<string?>.Success("com.example.sms"), Entry);
+            Assert.Equal("com.example.dialer", (string?)both["call_app"]!["package"]);
+            Assert.Equal("com.example.sms", (string?)both["sms_app"]!["package"]);
+            Assert.False(both.ContainsKey("unread"));
+            var none = WithDefaultApps(OtherAccess(), Outcome<string?>.Success(null), Outcome<string?>.Success(string.Empty), Entry);
+            Assert.False(none.ContainsKey("call_app") || none.ContainsKey("sms_app") || none.ContainsKey("unread"));
+            Assert.Equal("ok", (string?)none["status"]);
+        }
+
+        [Fact]
+        public void Both_reasons_are_kept_when_both_the_call_and_SMS_apps_fail()
+        {
+            var both = WithDefaultApps(
+                OtherAccess(),
+                Outcome<string?>.Failure(new UnauthorizedAccessException("telecom refused")),
+                Outcome<string?>.Failure(new InvalidOperationException("telephony refused")),
+                Entry);
+            var unread = (JsonObject)both["unread"]!;
+            Assert.Contains("telecom refused", (string?)unread["call_app"], StringComparison.Ordinal);
+            Assert.Contains("telephony refused", (string?)unread["sms_app"], StringComparison.Ordinal);
+            Assert.False(both.ContainsKey("call_app") || both.ContainsKey("sms_app"));
+
+            // One read, one failure: the read is kept beside the other's reason.
+            var one = WithDefaultApps(OtherAccess(), Outcome<string?>.Success("com.example.dialer"), Outcome<string?>.Failure(new InvalidOperationException("telephony refused")), Entry);
+            Assert.Equal("com.example.dialer", (string?)one["call_app"]!["package"]);
+            Assert.Equal(new[] { "sms_app" }, ((JsonObject)one["unread"]!).Select(member => member.Key));
+        }
     }
 }

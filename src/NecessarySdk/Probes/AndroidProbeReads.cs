@@ -882,6 +882,46 @@ namespace Necessary
 
         public static string Take(string value, int count) => value.Length <= count ? value : value.Substring(0, count);
 
+        /// <summary>
+        /// The apps that handle calls and texts, added to <c>other_access</c>
+        /// (<paramref name="result"/>): <c>call_app</c> (collector 13) and
+        /// <c>sms_app</c> (collector 15), each the package
+        /// <paramref name="entry"/> describes, left out where the phone names
+        /// none; each that could not be read is in <c>unread</c> with why, both
+        /// kept when both fail.
+        /// </summary>
+        public static JsonObject WithDefaultApps(
+            JsonObject result,
+            Outcome<string?> callApp,
+            Outcome<string?> smsApp,
+            Func<string, JsonObject> entry)
+        {
+            if (result is null)
+            {
+                throw new ArgumentNullException(nameof(result));
+            }
+
+            if (entry is null)
+            {
+                throw new ArgumentNullException(nameof(entry));
+            }
+
+            var unread = new List<KeyValuePair<string, string>>();
+            foreach (var (name, read) in new[] { ("call_app", callApp), ("sms_app", smsApp) })
+            {
+                if (read.IsFailure)
+                {
+                    unread.Add(new KeyValuePair<string, string>(name, Why(read.Error)));
+                }
+                else if (read.Value is { Length: > 0 } package)
+                {
+                    result[name] = entry(package);
+                }
+            }
+
+            return WithUnread(result, unread);
+        }
+
         internal static JsonObject WithUnread(JsonObject result, IEnumerable<KeyValuePair<string, string>> unread)
         {
             var parts = unread.Take(64).ToList();

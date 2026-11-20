@@ -387,12 +387,21 @@ namespace Necessary
                 result["tool_services"] = tools;
             }
 
-            // Left out when nothing watched the app's screen since the last read.
+            // Left out when nothing watched the app's screen since the last read;
+            // named in unread while a window of the app's could not be watched.
+            var unread = new List<KeyValuePair<string, string>>();
             if (touches.Take() is JsonObject counts)
             {
                 foreach (var count in counts.ToList())
                 {
-                    result[count.Key] = count.Value?.DeepClone();
+                    if (count.Key == "unread" && count.Value is JsonObject parts)
+                    {
+                        unread.AddRange(parts.Select(part => new KeyValuePair<string, string>(part.Key, (string?)part.Value ?? string.Empty)));
+                    }
+                    else
+                    {
+                        result[count.Key] = count.Value?.DeepClone();
+                    }
                 }
             }
 
@@ -405,10 +414,10 @@ namespace Necessary
 
             if (undescribed > 0)
             {
-                result["unread"] = new JsonObject { ["services"] = undescribed + " enabled services the system did not describe" };
+                unread.Insert(0, new KeyValuePair<string, string>("services", undescribed + " enabled services the system did not describe"));
             }
 
-            return result;
+            return WithUnread(result, unread);
         }
 
         /// <summary>Every app allowed to read the phone's notifications -- one-time codes among them.</summary>
@@ -433,7 +442,7 @@ namespace Necessary
             return Ok(("listeners", listeners), ("truncated", all.Count > MaxApps));
         }
 
-        /// <summary>The active device administrators, and the known remote-control apps installed.</summary>
+        /// <summary>The active device administrators, the known remote-control apps installed, and the apps that handle calls and texts.</summary>
         private JsonObject ProbeOtherAccess()
         {
             if (context.GetSystemService(Context.DevicePolicyService) is not DevicePolicyManager policy)
@@ -472,24 +481,17 @@ namespace Necessary
             var result = Ok(("device_admins", admins), ("remote_access_apps", remote), ("truncated", active.Count > MaxApps));
 
             // The app that handles calls (collector 13): malware that makes itself
-            // the call app can send a call meant for a bank to someone else. Left
-            // out where the phone names none.
-            try
-            {
-                if ((context.GetSystemService(Context.TelecomService) as Android.Telecom.TelecomManager)?.DefaultDialerPackage is string dialer
-                    && dialer.Length > 0)
-                {
-                    result["call_app"] = AppEntry(dialer);
-                }
-            }
-#pragma warning disable CA1031 // Unread, with why: never a phone without a call app.
-            catch (Exception error)
-#pragma warning restore CA1031
-            {
-                result = WithUnread(result, new[] { new KeyValuePair<string, string>("call_app", Why(error)) });
-            }
-
-            return result;
+            // the call app can send a call meant for a bank to someone else. The
+            // default SMS app (collector 15): malware that makes itself the SMS app
+            // reads and deletes the bank's one-time codes; the manifest's <queries>
+            // names SENDTO smsto, so Android shows this app who it is. Each is left
+            // out where the phone names none, and unread with why where it could
+            // not be read -- never a phone without one.
+            return WithDefaultApps(
+                result,
+                Outcome<string?>.Of(() => (context.GetSystemService(Context.TelecomService) as Android.Telecom.TelecomManager)?.DefaultDialerPackage),
+                Outcome<string?>.Of(() => Android.Provider.Telephony.Sms.GetDefaultSmsPackage(context)),
+                package => AppEntry(package));
         }
 
         /// <summary>

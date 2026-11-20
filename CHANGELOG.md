@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.13
+
+- Android: `other_access` names the default SMS app (`sms_app`), whose installer and system flag tell an app
+  the user chose from one that made itself the SMS app to read one-time codes. A call app and an SMS app
+  that could not be read are each named in `unread`, with why.
+- `doc/measurements.md` and the integration guide say which clicks a screen reports, and, in section 7.7,
+  who shows a call or SMS app from outside a store genuinely.
+- Android: the touch counts also cover your app's dialogs, from Android 10. While a window of your app's
+  that takes touches cannot be watched, the counts are left out and named in `unread`, with why. The README
+  says which clicks the SDK counts, in a .NET MAUI app too.
+- The Android collector is version 15.
+
 ## 0.1.12
 
 - iOS: `app_identity` says whether the app's main executable is stored encrypted (`executable_encrypted`),

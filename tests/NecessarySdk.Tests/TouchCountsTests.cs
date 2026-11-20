@@ -1,6 +1,7 @@
 // How the app's screen was touched (Android collector 14): a service's taps and
 // clicks are counted, a finger's and a keyboard's are not, and nothing watched
 // is no reading.
+using System.Linq;
 using System.Text.Json.Nodes;
 using Xunit;
 
@@ -120,6 +121,47 @@ namespace Necessary.Tests
             var second = counts.Take()!;
             Assert.Equal(0, Int(second, "touches"));
             Assert.Equal(3, Int(second, "counted_seconds"));
+        }
+
+        [Fact]
+        public void A_window_that_could_not_be_watched_leaves_the_counts_out_with_why()
+        {
+            var counts = Counts();
+            counts.WatchStarted(clicks: true);
+            Tap(counts, Marked, Unknown);
+            counts.SetUnwatchedWindows(true);   // a dialog opened that could not be watched
+            now += 1_000;
+            counts.SetUnwatchedWindows(false);  // and closed
+            now += 1_000;
+            var read = counts.Take()!;
+            Assert.False(read.ContainsKey("touches") || read.ContainsKey("touches_injected") || read.ContainsKey("clicks_without_touch"));
+            var unread = (JsonObject)read["unread"]!;
+            Assert.Equal(new[] { "touches", "touches_injected", "clicks_without_touch" }, unread.Select(part => part.Key));
+            Assert.Equal(2, Int(read, "counted_seconds"));
+
+            // Closed before this read began: the next one is whole.
+            Tap(counts, 0, Finger);
+            var next = counts.Take()!;
+            Assert.Equal(1, Int(next, "touches"));
+            Assert.False(next.ContainsKey("unread"));
+        }
+
+        [Fact]
+        public void A_window_still_open_that_could_not_be_watched_leaves_the_next_read_out_too()
+        {
+            var counts = Counts();
+            counts.WatchStarted(clicks: true);
+            counts.SetUnwatchedWindows(true);
+            Assert.True(counts.Take()!.ContainsKey("unread"));
+            Assert.True(counts.Take()!.ContainsKey("unread"));
+            counts.SetUnwatchedWindows(false);
+            Assert.True(counts.Take()!.ContainsKey("unread"));   // it was open during this read
+            Assert.Equal(0, Int(counts.Take()!, "touches"));
+
+            // Discarded while one is open: what follows still says so.
+            counts.SetUnwatchedWindows(true);
+            counts.Discard();
+            Assert.True(counts.Take()!.ContainsKey("unread"));
         }
 
         [Fact]

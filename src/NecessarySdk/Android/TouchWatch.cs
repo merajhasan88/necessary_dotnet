@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Android.App;
 using Android.OS;
 using Android.Runtime;
@@ -11,16 +12,26 @@ namespace Necessary
     /// <summary>
     /// The app's windows watched for <see cref="TouchCounts"/>, process-wide:
     /// each activity is hooked once, and every collector that counts is fed from
-    /// it while that activity is resumed. Main thread only.
+    /// it while that activity is resumed. From Android 10 the app's other
+    /// windows that take touches -- its dialogs -- are found in the process's
+    /// window list whenever a watched window gains or loses focus, and are
+    /// counted with it while it is resumed; one that cannot be watched leaves
+    /// the counts out, never short. Main thread only.
     /// </summary>
     internal static class TouchWatching
     {
         private static readonly List<TouchCounts> Listeners = new List<TouchCounts>();
         private static readonly List<TouchWatch> Watches = new List<TouchWatch>();
+        private static readonly List<TouchWatch> Children = new List<TouchWatch>();
+        private static readonly List<View> Unwatched = new List<View>();
         private static TouchWatch? active;
 
-        /// <summary>Whether a watched window is being counted: the resumed activity's.</summary>
-        internal static bool Counting(TouchWatch watch) => ReferenceEquals(watch, active);
+        // The window list could not be read at the last look: unwatched too.
+        private static bool listUnread;
+
+        /// <summary>Whether a watched window is being counted: the resumed activity's, or one of the app's other windows while an activity is resumed.</summary>
+        internal static bool Counting(TouchWatch watch) =>
+            ReferenceEquals(watch, active) || (active is not null && Children.Contains(watch));
 
         /// <summary>Starts feeding <paramref name="counts"/>, from the window the user sees now if any.</summary>
         public static void Add(TouchCounts counts)
@@ -33,7 +44,7 @@ namespace Necessary
             Listeners.Add(counts);
             if (active is not null)
             {
-                counts.WatchStarted(active.WatchesClicks);
+                Scan();
             }
             else if (NecessaryAndroid.ResumedActivity is Activity activity)
             {
@@ -50,16 +61,20 @@ namespace Necessary
             }
 
             counts.WatchStopped();
+            counts.SetUnwatchedWindows(false);
             counts.Discard();
             if (Listeners.Count == 0)
             {
                 active = null;
-                foreach (var watch in Watches)
+                foreach (var watch in Watches.Concat(Children))
                 {
                     watch.Detach();
                 }
 
                 Watches.Clear();
+                Children.Clear();
+                Unwatched.Clear();
+                listUnread = false;
             }
         }
 
@@ -83,10 +98,7 @@ namespace Necessary
             }
 
             active = watch;
-            foreach (var counts in Listeners)
-            {
-                counts.WatchStarted(watch.WatchesClicks);
-            }
+            Scan();
         }
 
         internal static void OnPaused(Activity activity)
@@ -109,6 +121,17 @@ namespace Necessary
             {
                 watch.Detach();
                 Watches.Remove(watch);
+            }
+
+            Prune();
+        }
+
+        /// <summary>A watched window gained or lost focus: a dialog opened or closed.</summary>
+        internal static void FocusChanged()
+        {
+            if (Listeners.Count > 0 && active is not null)
+            {
+                Scan();
             }
         }
 
@@ -145,6 +168,112 @@ namespace Necessary
             }
         }
 
+        // The clicks are watched only when every window counted watches them.
+        private static bool WatchesClicks() =>
+            active is not null && active.WatchesClicks && Children.All(child => child.WatchesClicks);
+
+        /// <summary>
+        /// The app's other windows that take touches, from Android 10's window
+        /// list: each dialog is watched as an activity is; one that cannot be is
+        /// counted as unwatched while it is open. An activity's window, the
+        /// plugin's own included, is the lifecycle's; a window that takes no
+        /// touches, such as a toast, is not watched.
+        /// </summary>
+        private static void Scan()
+        {
+            Prune();
+            listUnread = false;
+            if (active is null || !OperatingSystem.IsAndroidVersionAtLeast(29))
+            {
+                Report();
+                return;
+            }
+
+            IList<View>? roots;
+            try
+            {
+                roots = Android.Views.Inspectors.WindowInspector.GlobalWindowViews;
+            }
+#pragma warning disable CA1031 // The list not read: the counts are left out, with why.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                roots = null;
+            }
+
+            if (roots is null)
+            {
+                listUnread = true;
+                Report();
+                return;
+            }
+
+            foreach (var root in roots)
+            {
+                if (root is null || !root.IsAttachedToWindow || TakesNoTouches(root) || Known(root) || NecessaryAndroid.IsActivityWindow(root))
+                {
+                    continue;
+                }
+
+                var window = TouchWatch.WindowOf(root);
+                if (window?.Callback is Activity)
+                {
+                    continue;
+                }
+
+                var watch = window is null || TouchWatch.IsCounting(window) ? null : TouchWatch.Attach(window, root);
+                if (watch is null)
+                {
+                    if (window is null || !TouchWatch.IsCounting(window))
+                    {
+                        Unwatched.Add(root);
+                    }
+
+                    continue;
+                }
+
+                Children.Add(watch);
+            }
+
+            Report();
+        }
+
+        // Tells every collector which windows it counts now.
+        private static void Report()
+        {
+            foreach (var counts in Listeners)
+            {
+                if (active is not null)
+                {
+                    counts.WatchStarted(WatchesClicks());
+                }
+
+                counts.SetUnwatchedWindows(listUnread || Unwatched.Count > 0);
+            }
+        }
+
+        // A dialog closed, or an activity's window went: its watch is taken off.
+        private static void Prune()
+        {
+            foreach (var child in Children.Where(child => !child.Root.IsAttachedToWindow).ToList())
+            {
+                child.Detach();
+                Children.Remove(child);
+            }
+
+            Unwatched.RemoveAll(root => !root.IsAttachedToWindow);
+        }
+
+        private static bool Known(View root) =>
+            Children.Any(child => Same(child.Root, root)) || Unwatched.Any(other => Same(other, root));
+
+        private static bool TakesNoTouches(View root) =>
+            root.LayoutParameters is WindowManagerLayoutParams layout
+            && (layout.Flags & WindowManagerFlags.NotTouchable) != 0;
+
+        internal static bool Same(View? a, View? b) =>
+            a is not null && b is not null && JNIEnv.IsSameObject(a.Handle, b.Handle);
+
         private static TouchWatch? Find(Activity activity)
         {
             foreach (var watch in Watches)
@@ -160,29 +289,38 @@ namespace Necessary
     }
 
     /// <summary>
-    /// One activity watched: every touch and key passes through the window's
-    /// callback, and every click its screen reports to Accessibility through the
-    /// content view's delegate. Both hand every call on, unchanged, to what was
-    /// there before, and are put back on detach; one that something else has
-    /// since wrapped stays in place and counts no more.
+    /// One window watched, an activity's or a dialog's: every touch and key
+    /// passes through the window's callback, and every click its screen reports
+    /// to Accessibility through the content view's delegate. Both hand every call
+    /// on, unchanged, to what was there before, and are put back on detach; one
+    /// that something else has since wrapped stays in place and counts no more.
     /// </summary>
     internal sealed class TouchWatch
     {
-        private readonly Window window;
+        private static Java.Lang.Reflect.Field? decorWindow;
+        private static bool decorWindowTried;
+
         private readonly CountingCallback callback;
         private readonly ViewGroup? content;
         private readonly CountingDelegate? accessibility;
 
-        private TouchWatch(Activity activity, Window window, Window.ICallback original, ViewGroup? content, View.AccessibilityDelegate? delegateThere, bool delegateRead)
+        private TouchWatch(Activity? activity, Window window, View root, Window.ICallback original, ViewGroup? content, View.AccessibilityDelegate? delegateThere, bool delegateRead)
         {
             Activity = activity;
-            this.window = window;
+            Window = window;
+            Root = root;
             callback = new CountingCallback(original, this);
             this.content = content;
             accessibility = content is not null && delegateRead ? new CountingDelegate(delegateThere, this) : null;
         }
 
-        public Activity Activity { get; }
+        /// <summary>The activity watched; null for a dialog's window.</summary>
+        public Activity? Activity { get; }
+
+        public Window Window { get; }
+
+        /// <summary>The window's root view.</summary>
+        public View Root { get; }
 
         /// <summary>Whether the clicks are watched: only where the content view's own delegate could be read, so that it is kept.</summary>
         public bool WatchesClicks => accessibility is not null;
@@ -190,17 +328,23 @@ namespace Necessary
         /// <summary>Watches <paramref name="activity"/>, or null where it has no window to watch.</summary>
         public static TouchWatch? Attach(Activity activity)
         {
+            var window = activity.Window;
+            return window is null ? null : Attach(window, window.DecorView, activity);
+        }
+
+        /// <summary>Watches <paramref name="window"/>, whose root view is <paramref name="root"/>, or null where it cannot be.</summary>
+        public static TouchWatch? Attach(Window window, View root, Activity? activity = null)
+        {
             try
             {
-                var window = activity.Window;
-                if (window?.Callback is not Window.ICallback original)
+                if (window.Callback is not Window.ICallback original || original is CountingCallback)
                 {
                     return null;
                 }
 
-                var content = activity.FindViewById<ViewGroup>(Android.Resource.Id.Content);
+                var content = window.FindViewById<ViewGroup>(Android.Resource.Id.Content);
                 var (read, there) = content is null ? (false, null) : ReadDelegate(content);
-                var watch = new TouchWatch(activity, window, original, content, there, read);
+                var watch = new TouchWatch(activity, window, root, original, content, there, read);
                 window.Callback = watch.callback;
                 if (watch.content is not null && watch.accessibility is not null)
                 {
@@ -217,15 +361,51 @@ namespace Necessary
             }
         }
 
+        /// <summary>Whether <paramref name="window"/>'s callback is already a watch's.</summary>
+        public static bool IsCounting(Window window) => window.Callback is CountingCallback;
+
+        /// <summary>
+        /// The window a root view draws, where it is a window's decor view: read
+        /// from the decor view's own field, which Android lists as unsupported,
+        /// not blocked, for every app. Null where it is not a decor view or the
+        /// field cannot be read.
+        /// </summary>
+        public static Window? WindowOf(View root)
+        {
+            try
+            {
+                if (!decorWindowTried)
+                {
+                    decorWindowTried = true;
+                    using var type = Java.Lang.Class.ForName("com.android.internal.policy.DecorView");
+                    decorWindow = type.GetDeclaredField("mWindow");
+                    decorWindow.Accessible = true;
+                }
+
+                if (decorWindow?.DeclaringClass is not Java.Lang.Class decor || !decor.IsInstance(root))
+                {
+                    return null;
+                }
+
+                return decorWindow.Get(root)?.JavaCast<Window>();
+            }
+#pragma warning disable CA1031 // Not read: the window is counted as unwatched.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                return null;
+            }
+        }
+
         /// <summary>Puts back what was there, where it is still the watch's own.</summary>
         public void Detach()
         {
             callback.Counting = false;
             try
             {
-                if (ReferenceEquals(window.Callback, callback))
+                if (ReferenceEquals(Window.Callback, callback))
                 {
-                    window.Callback = callback.Inner;
+                    Window.Callback = callback.Inner;
                 }
 
                 if (content is not null && accessibility is not null)
@@ -362,7 +542,22 @@ namespace Necessary
 
             public void OnWindowAttributesChanged(WindowManagerLayoutParams? attrs) => Inner.OnWindowAttributesChanged(attrs);
 
-            public void OnWindowFocusChanged(bool hasFocus) => Inner.OnWindowFocusChanged(hasFocus);
+            public void OnWindowFocusChanged(bool hasFocus)
+            {
+                Inner.OnWindowFocusChanged(hasFocus);
+                if (Counting)
+                {
+                    try
+                    {
+                        TouchWatching.FocusChanged();
+                    }
+#pragma warning disable CA1031 // Looking for the app's dialogs never stops a focus change.
+                    catch (Exception)
+#pragma warning restore CA1031
+                    {
+                    }
+                }
+            }
 
             public ActionMode? OnWindowStartingActionMode(ActionMode.ICallback? callback) => Inner.OnWindowStartingActionMode(callback);
 
